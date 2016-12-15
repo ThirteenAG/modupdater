@@ -4,6 +4,7 @@
 *.exp
 *.la
 *.lib
+!libcurl_a.lib
 *.lo
 *.o
 *.obj
@@ -17,7 +18,7 @@
 .project
 .settings
 /build/
-/builds/
+#/builds/
 CHANGES.dist
 Debug
 INSTALL

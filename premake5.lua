@@ -13,7 +13,7 @@ workspace "WFP.Updater"
    files { "source/includes/zipper/*.cpp" }
    
    includedirs { "source/Header Files/" }
-   includedirs { "source/includes/curl/include" }
+   includedirs { "source/includes/curl/builds/libcurl-vc14-x86-release-static-ipv6-sspi-winssl/include" }
    includedirs { "source/includes/cpr/include" }
    includedirs { "source/includes/date" }
    includedirs { "source/includes/jsoncpp/include" }
