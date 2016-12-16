@@ -16,6 +16,7 @@ workspace "WFP.Updater"
    includedirs { "source/includes/curl/builds/libcurl-vc14-x86-release-static-ipv6-sspi-winssl/include" }
    includedirs { "source/includes/cpr/include" }
    includedirs { "source/includes/date" }
+   includedirs { "source/includes/inireader" }
    includedirs { "source/includes/jsoncpp/include" }
    includedirs { "source/includes/zipper" }
    includedirs { "source/includes/zlib-1.2.8" }
