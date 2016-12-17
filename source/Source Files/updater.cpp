@@ -2,6 +2,9 @@
 
 CIniReader iniReader;
 std::string oldDir;
+HWND DialogHwnd;
+#define BUTTONID1 1001
+#define BUTTONID2 1002
 
 int32_t GetLocalFileInfo(FILETIME ftCreate, FILETIME ftLastAccess, FILETIME ftLastWrite)
 {
@@ -10,7 +13,7 @@ int32_t GetLocalFileInfo(FILETIME ftCreate, FILETIME ftLastAccess, FILETIME ftLa
 	FileTimeToSystemTime(&ftLastWrite, &stUTC);
 	auto nLocalFileUpdateTime = date::year(stUTC.wYear) / date::month(stUTC.wMonth) / date::day(stUTC.wDay);
 	auto now = floor<days>(std::chrono::system_clock::now());
-	return (sys_days{ now } -sys_days{ nLocalFileUpdateTime }).count();
+	return (sys_days{ now } - sys_days{ nLocalFileUpdateTime }).count();
 }
 
 std::tuple<int32_t, std::string, std::string> GetRemoteFileInfo(std::string strFileName, std::string strExtension)
@@ -58,7 +61,7 @@ std::tuple<int32_t, std::string, std::string> GetRemoteFileInfo(std::string strF
 						sscanf_s(wsFix["assets"][i]["updated_at"].asCString(), "%d-%d-%d%*s", &y, &m, &d);
 						auto nRemoteFileUpdateTime = date::year(y) / date::month(m) / date::day(d);
 						auto now = floor<days>(std::chrono::system_clock::now());
-						return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, strFileName);
+						return std::make_tuple((sys_days{ now } - sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, strFileName);
 					}
 				}
 			}
@@ -66,7 +69,7 @@ std::tuple<int32_t, std::string, std::string> GetRemoteFileInfo(std::string strF
 	}
 	else
 	{
-		std::cout << "Something wrong!" << "Status code: " << r.status_code << std::endl;
+		std::cout << "Something wrong! " << "Status code: " << r.status_code << std::endl;
 	}
 	return std::make_tuple(-1, "", "");
 }
@@ -94,16 +97,89 @@ void UpdateFile(std::string strFileName, std::string szDownloadURL, std::string 
 			std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(lowcsstrFileName), ::tolower);
 			if (lowcsIt.find(lowcsstrFileName) != std::string::npos)
 			{
-				zipFile.openEntry(it->c_str());
-				std::ofstream outputFile(strFileName, std::ios::binary);
-				zipFile >> outputFile;
+				///zipFile.openEntry(it->c_str());
+				///std::ofstream outputFile(strFileName, std::ios::binary);
+				///zipFile >> outputFile;
 				std::cout << strFileName << " was updated succesfully." << std::endl;
-				auto result = MessageBox(NULL, std::string(strFileName + " was updated succesfully." + '\n').c_str(), "WFP.Updater", MB_OK | MB_ICONINFORMATION);
+				//auto result = MessageBox(NULL, std::string(strFileName + " was updated succesfully." + '\n').c_str(), "WFP.Updater", MB_OK | MB_ICONINFORMATION);
 				//if (result == IDOK)
 				//{
 				// // delete zip
 				//}
 			}
+		}
+	}
+}
+
+void ShowUpdateDialog(std::string strFileName, std::string szDownloadURL, std::string szDownloadName)
+{
+	auto TaskDialogCallbackProc = [](HWND hwnd, UINT uNotification, WPARAM wParam, LPARAM lParam, LONG_PTR dwRefData)->HRESULT
+	{
+		DialogHwnd = hwnd;
+
+		switch (uNotification)
+		{
+		case TDN_DIALOG_CONSTRUCTED:
+			SendMessage(hwnd, TDM_SET_MARQUEE_PROGRESS_BAR, 1, 0);
+			SendMessage(hwnd, TDM_SET_PROGRESS_BAR_MARQUEE, 1, 0);
+			break;
+		case TDN_BUTTON_CLICKED:
+			break;
+		default:
+			break;
+		}
+		return FALSE;
+	};
+
+	TASKDIALOGCONFIG tdc = { sizeof(TASKDIALOGCONFIG) };
+	auto szTitle = L"WFP.Updater";
+	auto szHeader = std::string("An update for " + strFileName + " is available");
+	auto szBodyText = L"Do you want to download this update?";
+	auto szButton2Text = std::string("Download and install the update (plugin)\n" "Only " + strFileName + " will be updated.");
+
+	std::wstring szHeaderws; std::copy(szHeader.begin(), szHeader.end(), std::back_inserter(szHeaderws));
+	std::wstring szButton2Textws; std::copy(szButton2Text.begin(), szButton2Text.end(), std::back_inserter(szButton2Textws));
+
+	TASKDIALOG_BUTTON aCustomButtons[] = {
+		{ BUTTONID1, L"Download and install the update now" },
+		{ BUTTONID2, L"Do not download the update." },
+	};
+
+	tdc.hwndParent = NULL;
+	tdc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS;
+	tdc.pButtons = aCustomButtons;
+	tdc.cButtons = _countof(aCustomButtons);
+	//tdc.pszMainIcon = TD_INFORMATION_ICON;
+	tdc.pszWindowTitle = szTitle;
+	tdc.pszMainInstruction = szHeaderws.c_str();
+	tdc.pszContent = szBodyText;
+	auto nClickedBtnID = -1;
+	auto hr = TaskDialogIndirect(&tdc, &nClickedBtnID, nullptr, nullptr);
+
+	if (SUCCEEDED(hr) && nClickedBtnID == BUTTONID1)
+	{
+		tdc.pButtons = NULL;
+		tdc.cButtons = 0;
+		tdc.pszMainIcon = TD_INFORMATION_ICON;
+		tdc.dwFlags = TDF_SHOW_MARQUEE_PROGRESS_BAR;
+		tdc.pszMainInstruction = L"Downloading Update...";
+		tdc.pszContent = L"";
+		tdc.pfCallback = TaskDialogCallbackProc;
+
+		std::thread t([&strFileName, &szDownloadURL, &szDownloadName]
+		{
+			UpdateFile(strFileName, szDownloadURL, szDownloadName);
+			SendMessage(DialogHwnd, TDM_SET_MARQUEE_PROGRESS_BAR, FALSE, 0);
+			SendMessage(DialogHwnd, TDM_SET_PROGRESS_BAR_POS, 100, 0);
+			SendMessage(DialogHwnd, TDM_UPDATE_ELEMENT_TEXT, TDE_MAIN_INSTRUCTION, (LPARAM)L"Update completed succesfully.");
+			//SendMessage(DialogHwnd, TDM_CLICK_BUTTON, static_cast<WPARAM>(TDCBF_OK_BUTTON), 0);
+		});
+
+		hr = TaskDialogIndirect(&tdc, nullptr, nullptr, nullptr);
+
+		if (SUCCEEDED(hr))
+		{
+			t.join();
 		}
 	}
 }
@@ -143,11 +219,7 @@ bool ProcessFiles()
 							std::cout << "Remote file updated " << nRemoteFileUpdatedDaysAgo << " days ago." << std::endl;
 							std::cout << "Local file updated " << nLocaFileUpdatedDaysAgo << " days ago." << std::endl;
 
-							auto result = MessageBox(NULL, std::string("Update is available for " + strFileName + '\n' + "Would you like to update?").c_str(), "WFP.Updater", MB_YESNO | MB_ICONINFORMATION | MB_SYSTEMMODAL);
-							if (result == IDYES)
-								UpdateFile(strFileName, szDownloadURL, szDownloadName);
-							else
-								std::cout << "Update cancelled." << std::endl;
+							ShowUpdateDialog(strFileName, szDownloadURL, szDownloadName);
 						}
 						else
 						{
