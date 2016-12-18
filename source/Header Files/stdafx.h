@@ -6,6 +6,7 @@
 #include <cpr/multipart.h>
 #include <date.h>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <json/json.h>
 #include <json/reader.h>
