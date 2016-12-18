@@ -221,7 +221,8 @@ void UpdateFile(std::string strFileName, std::string szDownloadURL, std::string 
 				std::transform(it->begin(), it->end(), std::back_inserter(lowcsIt), ::tolower);
 				std::transform(szFilePath.begin(), szFilePath.end(), std::back_inserter(lowcsFilePath), ::tolower);
 				std::transform(szFileName.begin(), szFileName.end(), std::back_inserter(lowcsFileName), ::tolower);
-				itFileName = it->substr(it->rfind('/') + 1);
+				itFileName = *it; //it->substr(it->find(szFilePath) + 1);
+				itFileName.erase(0, szFilePath.length());
 
 				if ((!bCheckboxChecked && lowcsIt.find(lowcsFileName) != std::string::npos) || (bCheckboxChecked && lowcsIt.find(lowcsFilePath) != std::string::npos))
 				{
@@ -240,13 +241,14 @@ void UpdateFile(std::string strFileName, std::string szDownloadURL, std::string 
 						std::cout << itFileName << " is not locked. Overwriting..." << std::endl;
 					}
 
-					//TODO
-					//zipFile.openEntry(it->c_str());
-					//std::ofstream outputFile(modulePath + itFileName, std::ios::binary);
-					//zipFile >> outputFile;
-					//outputFile.close();
-					//std::cout << itFileName << " was updated succesfully." << std::endl;
-					//bSuccess = true;
+					zipFile.openEntry(it->c_str());
+					std::string outStream(modulePath + itFileName);
+					std::replace(outStream.begin(), outStream.end(), '/', '\\');
+					std::ofstream outputFile(outStream, std::ios::binary);
+					zipFile >> outputFile;
+					outputFile.close();
+					std::cout << itFileName << " was updated succesfully." << std::endl;
+					bSuccess = true;
 				}
 			}
 		}
