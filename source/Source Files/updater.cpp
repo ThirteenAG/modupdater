@@ -1,5 +1,7 @@
 #include "stdafx.h"
 
+//#define _LOG
+
 CIniReader iniReader;
 std::string modulePath, processPath;
 HWND DialogHwnd;
@@ -53,23 +55,54 @@ BOOL CheckForFileLock(LPCWSTR pFilePath, bool bReleaseLock = false)
 	return bResult;
 }
 
-void CleanupLockedFiles()
+void FindFilesRecursively(const std::wstring &directory, void(*callback)(std::wstring &s))
 {
-	WIN32_FIND_DATA fd;
-	HANDLE asiFile = FindFirstFile(std::string(modulePath + "*.deleteonnextlaunch").c_str(), &fd);
-	if (asiFile != INVALID_HANDLE_VALUE)
+	std::wstring tmp = directory + L"\\*";
+	WIN32_FIND_DATAW file;
+	HANDLE search_handle = FindFirstFileW(tmp.c_str(), &file);
+	if (search_handle != INVALID_HANDLE_VALUE)
 	{
+		std::vector<std::wstring> directories;
+
 		do
 		{
-			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+			if (file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
 			{
-				auto strFileName = std::string(modulePath + fd.cFileName);
-				DeleteFile(strFileName.c_str());
+				if ((!lstrcmpW(file.cFileName, L".")) || (!lstrcmpW(file.cFileName, L"..")))
+					continue;
 			}
 
-		} while (FindNextFile(asiFile, &fd));
-		FindClose(asiFile);
+			tmp = directory + L"\\" + std::wstring(file.cFileName);
+			if (!(file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+			{
+				callback(tmp);
+			}
+
+			if (file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+				directories.push_back(tmp);
+		} while (FindNextFileW(search_handle, &file));
+
+		FindClose(search_handle);
+
+		for (std::vector<std::wstring>::iterator iter = directories.begin(), end = directories.end(); iter != end; ++iter)
+			FindFilesRecursively(*iter, callback);
 	}
+}
+
+void CleanupLockedFiles()
+{
+	auto cb = [](std::wstring &s)
+	{
+		static std::string const targetExtension(".deleteonnextlaunch");
+		if (s.size() >= targetExtension.size() && std::equal(s.end() - targetExtension.size(), s.end(),	targetExtension.begin())) 
+		{
+			DeleteFileW(s.c_str());
+			std::wcout << L"Deleted " << s << std::endl;
+		}
+	};
+	
+	std::wstring modulePathWS; std::copy(modulePath.begin(), modulePath.end(), std::back_inserter(modulePathWS));
+	FindFilesRecursively(modulePathWS, cb);
 }
 
 int32_t GetLocalFileInfo(FILETIME ftCreate, FILETIME ftLastAccess, FILETIME ftLastWrite)
@@ -207,12 +240,13 @@ void UpdateFile(std::string strFileName, std::string szDownloadURL, std::string 
 						std::cout << itFileName << " is not locked. Overwriting..." << std::endl;
 					}
 
-					zipFile.openEntry(it->c_str());
-					std::ofstream outputFile(modulePath + itFileName, std::ios::binary);
-					zipFile >> outputFile;
-					outputFile.close();
-					std::cout << itFileName << " was updated succesfully." << std::endl;
-					bSuccess = true;
+					//TODO
+					//zipFile.openEntry(it->c_str());
+					//std::ofstream outputFile(modulePath + itFileName, std::ios::binary);
+					//zipFile >> outputFile;
+					//outputFile.close();
+					//std::cout << itFileName << " was updated succesfully." << std::endl;
+					//bSuccess = true;
 				}
 			}
 		}
@@ -355,7 +389,11 @@ void ShowUpdateDialog(std::string strFileName, std::string szDownloadURL, std::s
 
 DWORD WINAPI ProcessFiles(LPVOID)
 {
-	CleanupLockedFiles();
+#ifdef _LOG
+	std::ofstream out(modulePath + "WFP.Updater.log");
+	std::cout.rdbuf(out.rdbuf());
+	std::cout << "Current directory: " << modulePath << std::endl;
+#endif
 
 	bool bRes = false;
 	std::string name = std::string(iniReader.ReadString("FILE", "Name", ".*\\.WidescreenFix"));
@@ -416,13 +454,12 @@ DWORD WINAPI ProcessFiles(LPVOID)
 	if (!bRes)
 		std::cout << "No files found to process." << std::endl;
 
+	CleanupLockedFiles();
 	return 0;
 }
 
 void Init()
 {
-	#define _LOG
-
 	char buffer[MAX_PATH];
 	HMODULE hm = NULL;
 	if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&Init, &hm))
@@ -431,12 +468,6 @@ void Init()
 	modulePath = std::string(buffer).substr(0, std::string(buffer).rfind('\\') + 1);
 	GetModuleFileName(NULL, buffer, sizeof(buffer));
 	processPath = std::string(buffer);
-
-	#ifdef _LOG
-	std::ofstream out(/*modulePath + */"WFP.Updater.log");
-	std::cout.rdbuf(out.rdbuf());
-	std::cout << "Current directory: " << modulePath << std::endl;
-	#endif
 
 	iniReader.SetIniPath();
 
