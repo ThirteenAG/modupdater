@@ -310,10 +310,23 @@ bool ProcessFiles()
 
 void Init()
 {
+	//#define _LOG
+	#ifdef _LOG
+		std::ofstream out("WFP.Updater.log");
+		std::cout.rdbuf(out.rdbuf());
+	#endif
+
 	char buffer[MAX_PATH];
 	GetCurrentDirectory(MAX_PATH, buffer);
 	oldDir = std::string(buffer);
-	GetModuleFileName(NULL, buffer, MAX_PATH);
+
+	HMODULE hm = NULL;
+	if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&Init, &hm))
+	{
+		int ret = GetLastError();
+		fprintf(stderr, "GetModuleHandle returned %d\n", ret);
+	}
+	GetModuleFileName(hm, buffer, sizeof(buffer));
 	std::string modulePath = std::string(buffer).substr(0, std::string(buffer).rfind('\\') + 1);
 	SetCurrentDirectory(modulePath.c_str());
 	//std::cout << "Current directory: " << modulePath << std::endl;
