@@ -1,10 +1,76 @@
 #include "stdafx.h"
 
 CIniReader iniReader;
-std::string oldDir;
+std::string modulePath, processPath;
 HWND DialogHwnd;
 #define BUTTONID1 1001
 #define BUTTONID2 1002
+#define BUTTONID3 1003
+#define BUTTONID4 1004
+
+BOOL CheckForFileLock(LPCWSTR pFilePath, bool bReleaseLock = false)
+{
+	BOOL bResult = FALSE;
+
+	DWORD dwSession;
+	WCHAR szSessionKey[CCH_RM_SESSION_KEY + 1] = { 0 };
+	DWORD dwError = RmStartSession(&dwSession, 0, szSessionKey);
+	if (dwError == ERROR_SUCCESS)
+	{
+		dwError = RmRegisterResources(dwSession, 1, &pFilePath, 0, NULL, 0, NULL);
+		if (dwError == ERROR_SUCCESS)
+		{
+			UINT nProcInfoNeeded = 0;
+			UINT nProcInfo = 0;
+			RM_PROCESS_INFO rgpi[1];
+			DWORD dwReason;
+
+			dwError = RmGetList(dwSession, &nProcInfoNeeded, &nProcInfo, rgpi, &dwReason);
+			if (dwError == ERROR_SUCCESS || dwError == ERROR_MORE_DATA)
+			{
+				if (nProcInfoNeeded > 0)
+				{
+					//If current process does not have enough privileges to close one of
+					//the "offending" processes, you'll get ERROR_FAIL_NOACTION_REBOOT
+					if (bReleaseLock)
+					{
+						dwError = RmShutdown(dwSession, RmForceShutdown, NULL);
+						if (dwError == ERROR_SUCCESS)
+						{
+							bResult = TRUE;
+						}
+					}
+				}
+				else
+					bResult = TRUE;
+			}
+		}
+	}
+
+	RmEndSession(dwSession);
+
+	SetLastError(dwError);
+	return bResult;
+}
+
+void CleanupLockedFiles()
+{
+	WIN32_FIND_DATA fd;
+	HANDLE asiFile = FindFirstFile(std::string(modulePath + "*.deleteonnextlaunch").c_str(), &fd);
+	if (asiFile != INVALID_HANDLE_VALUE)
+	{
+		do
+		{
+			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+			{
+				auto strFileName = std::string(modulePath + fd.cFileName);
+				DeleteFile(strFileName.c_str());
+			}
+
+		} while (FindNextFile(asiFile, &fd));
+		FindClose(asiFile);
+	}
+}
 
 int32_t GetLocalFileInfo(FILETIME ftCreate, FILETIME ftLastAccess, FILETIME ftLastWrite)
 {
@@ -37,7 +103,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 	
 		if (parsingSuccessful)
 		{
-			std::cout << "GitHub's response parsed succesfully." << std::endl;
+			std::cout << "GitHub's response parsed successfully." << std::endl;
 	
 			for (Json::ValueConstIterator it = parsedFromString.begin(); it != parsedFromString.end(); ++it)
 			{
@@ -85,13 +151,13 @@ void UpdateFile(std::string strFileName, std::string szDownloadURL, std::string 
 
 	if (r.status_code == 200)
 	{
-		std::ofstream DownloadedZip(szDownloadName, std::ios::binary | std::ios::out);
+		std::ofstream DownloadedZip(modulePath + szDownloadName, std::ios::binary | std::ios::out);
 		DownloadedZip << r.text;
 		DownloadedZip.close();
 		std::cout << "Download complete." << std::endl;
 
 		ziputils::unzipper zipFile;
-		zipFile.open(szDownloadName.c_str());
+		zipFile.open(std::string(modulePath + szDownloadName).c_str());
 		auto filenames = zipFile.getFilenames();
 		std::string szFilePath, szFileName;
 
@@ -126,9 +192,25 @@ void UpdateFile(std::string strFileName, std::string szDownloadURL, std::string 
 
 				if ((!bCheckboxChecked && lowcsIt.find(lowcsFileName) != std::string::npos) || (bCheckboxChecked && lowcsIt.find(lowcsFilePath) != std::string::npos))
 				{
-					//zipFile.openEntry(it->c_str());
-					//std::ofstream outputFile(itFileName, std::ios::binary);
-					//zipFile >> outputFile;
+					std::string fullPath = std::string(modulePath + itFileName);
+					std::wstring PathWS; std::copy(fullPath.begin(), fullPath.end(), std::back_inserter(PathWS));
+					if (CheckForFileLock(PathWS.c_str()) == FALSE)
+					{
+						std::cout << itFileName << " is locked. Renaming..." << std::endl;
+						if (MoveFile(_T(fullPath.c_str()), _T(std::string(fullPath + ".deleteonnextlaunch").c_str())))
+							std::cout << itFileName << " was renamed to " << fullPath + ".deleteonnextlaunch" << std::endl;
+						else
+							std::cout << "Error: " << GetLastError() << std::endl;
+					}
+					else
+					{
+						std::cout << itFileName << " is not locked. Overwriting..." << std::endl;
+					}
+
+					zipFile.openEntry(it->c_str());
+					std::ofstream outputFile(modulePath + itFileName, std::ios::binary);
+					zipFile >> outputFile;
+					outputFile.close();
 					std::cout << itFileName << " was updated succesfully." << std::endl;
 					bSuccess = true;
 				}
@@ -215,8 +297,13 @@ void ShowUpdateDialog(std::string strFileName, std::string szDownloadURL, std::s
 
 	if (SUCCEEDED(hr) && nClickedBtnID == BUTTONID1)
 	{
-		tdc.pButtons = NULL;
-		tdc.cButtons = 0;
+		TASKDIALOG_BUTTON aCustomButtons2[] = {
+			{ BUTTONID3, L"Restart the game to apply changes" },
+			{ BUTTONID4, L"Continue" },
+		};
+
+		tdc.pButtons = aCustomButtons2;
+		tdc.cButtons = _countof(aCustomButtons2);
 		//tdc.pszMainIcon = TD_INFORMATION_ICON;
 		tdc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SHOW_MARQUEE_PROGRESS_BAR | TDF_ENABLE_HYPERLINKS;
 		tdc.pszMainInstruction = L"Downloading Update...";
@@ -235,11 +322,29 @@ void ShowUpdateDialog(std::string strFileName, std::string szDownloadURL, std::s
 				SendMessage(DialogHwnd, TDM_CLICK_BUTTON, static_cast<WPARAM>(TDCBF_OK_BUTTON), 0);
 		});
 
-		hr = TaskDialogIndirect(&tdc, nullptr, nullptr, nullptr);
+		hr = TaskDialogIndirect(&tdc, &nClickedBtnID, nullptr, nullptr);
 
 		if (SUCCEEDED(hr))
 		{
 			t.join();
+
+			if (nClickedBtnID == BUTTONID3)
+			{
+				SHELLEXECUTEINFO ShExecInfo = { 0 };
+				ShExecInfo.cbSize = sizeof(SHELLEXECUTEINFO);
+				ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+				ShExecInfo.hwnd = NULL;
+				ShExecInfo.lpVerb = NULL;
+				ShExecInfo.lpFile = processPath.c_str();
+				ShExecInfo.lpParameters = "";
+				ShExecInfo.lpDirectory = NULL;
+				ShExecInfo.nShow = SW_SHOWNORMAL;
+				ShExecInfo.hInstApp = NULL;
+				ShellExecuteEx(&ShExecInfo);
+				//WaitForSingleObject(ShExecInfo.hProcess, INFINITE);
+
+				ExitProcess(0);
+			}
 		}
 	}
 	else
@@ -248,14 +353,16 @@ void ShowUpdateDialog(std::string strFileName, std::string szDownloadURL, std::s
 	}
 }
 
-bool ProcessFiles()
+DWORD WINAPI ProcessFiles(LPVOID)
 {
+	CleanupLockedFiles();
+
 	bool bRes = false;
 	std::string name = std::string(iniReader.ReadString("FILE", "Name", ".*\\.WidescreenFix"));
 	std::string ext = std::string(iniReader.ReadString("FILE", "Extension", "asi"));
 
 	WIN32_FIND_DATA fd;
-	HANDLE asiFile = FindFirstFile(std::string("*." + ext).c_str(), &fd);
+	HANDLE asiFile = FindFirstFile(std::string(modulePath + "*." + ext).c_str(), &fd);
 	if (asiFile != INVALID_HANDLE_VALUE)
 	{
 		do 
@@ -305,40 +412,35 @@ bool ProcessFiles()
 		} while (FindNextFile(asiFile, &fd));
 		FindClose(asiFile);
 	}
-	return bRes;
+	
+	if (!bRes)
+		std::cout << "No files found to process." << std::endl;
+
+	return 0;
 }
 
 void Init()
 {
-	//#define _LOG
-	#ifdef _LOG
-		std::ofstream out("WFP.Updater.log");
-		std::cout.rdbuf(out.rdbuf());
-	#endif
+	#define _LOG
 
 	char buffer[MAX_PATH];
-	GetCurrentDirectory(MAX_PATH, buffer);
-	oldDir = std::string(buffer);
-
 	HMODULE hm = NULL;
 	if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&Init, &hm))
-	{
-		int ret = GetLastError();
-		fprintf(stderr, "GetModuleHandle returned %d\n", ret);
-	}
+		std::cout << "GetModuleHandle returned " << GetLastError() << std::endl;
 	GetModuleFileName(hm, buffer, sizeof(buffer));
-	std::string modulePath = std::string(buffer).substr(0, std::string(buffer).rfind('\\') + 1);
-	SetCurrentDirectory(modulePath.c_str());
-	//std::cout << "Current directory: " << modulePath << std::endl;
+	modulePath = std::string(buffer).substr(0, std::string(buffer).rfind('\\') + 1);
+	GetModuleFileName(NULL, buffer, sizeof(buffer));
+	processPath = std::string(buffer);
+
+	#ifdef _LOG
+	std::ofstream out(/*modulePath + */"WFP.Updater.log");
+	std::cout.rdbuf(out.rdbuf());
+	std::cout << "Current directory: " << modulePath << std::endl;
+	#endif
 
 	iniReader.SetIniPath();
 
-	if (!ProcessFiles())
-	{
-		std::cout << "No files found to process." << std::endl;
-		//return;
-	}
+	CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&ProcessFiles, 0, 0, NULL);
 
-	SetCurrentDirectory(oldDir.c_str());
 	std::getchar();
 }
