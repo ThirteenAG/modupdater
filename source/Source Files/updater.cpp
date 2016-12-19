@@ -1,7 +1,5 @@
 #include "stdafx.h"
 
-//#define _LOG
-
 CIniReader iniReader;
 std::string modulePath, processPath;
 HWND DialogHwnd;
@@ -120,57 +118,75 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 	strFileName.erase(strFileName.find_last_of('.'));
 	strFileName.append(".zip");
 
-	std::string szUrl = std::string(iniReader.ReadString("API", "URL", "https://api.github.com/repos/ThirteenAG/WidescreenFixesPack/releases"));
-	std::string szToken = std::string(iniReader.ReadString("API", "Token", "63c1f1cc5782c8f1dafad05448e308f0cf8c9198"));
-	std::string szPerPage = std::string(iniReader.ReadString("API", "PerPage", "100"));
-
-	std::cout << "Connecting to GitHub..." << std::endl;
-
-	auto r = cpr::Get(cpr::Url{ szUrl + "?access_token=" + szToken + "&per_page=" + szPerPage });
-	
-	if (r.status_code == 200)
+	for (size_t iniCount = 0;; iniCount++)
 	{
-		Json::Value parsedFromString;
-		Json::Reader reader;
-		bool parsingSuccessful = reader.parse(r.text, parsedFromString);
-	
-		if (parsingSuccessful)
+		std::string szUrl;
+		std::string szToken;
+		std::string szPerPage;
+		std::string strURL("Url");
+		std::string strToken("Token");
+
+		if (iniCount > 0)
 		{
-			std::cout << "GitHub's response parsed successfully." << std::endl;
-	
-			for (Json::ValueConstIterator it = parsedFromString.begin(); it != parsedFromString.end(); ++it)
+			strURL = "Url" + std::to_string(iniCount);
+			strToken = "Token" + std::to_string(iniCount);
+		}
+		
+		if (std::string(iniReader.ReadString("API", (char*)strURL.c_str(), "")).empty())
+			break;
+		
+		szUrl = std::string(iniReader.ReadString("API", (char*)&strURL[0], (iniCount == 0) ? "https://api.github.com/repos/ThirteenAG/WidescreenFixesPack/releases" : ""));
+		szToken = std::string(iniReader.ReadString("API", (char*)&strToken[0], (iniCount == 0) ? "63c1f1cc5782c8f1dafad05448e308f0cf8c9198" : ""));
+		szPerPage = std::string(iniReader.ReadString("API", "PerPage", "100"));
+
+		std::cout << "Connecting to GitHub..." << std::endl;
+
+		auto r = cpr::Get(cpr::Url{ szUrl + "?access_token=" + szToken + "&per_page=" + szPerPage });
+
+		if (r.status_code == 200)
+		{
+			Json::Value parsedFromString;
+			Json::Reader reader;
+			bool parsingSuccessful = reader.parse(r.text, parsedFromString);
+
+			if (parsingSuccessful)
 			{
-				const Json::Value& wsFix = *it;
-	
-				for (size_t i = 0; i < wsFix["assets"].size(); i++)
+				std::cout << "GitHub's response parsed successfully." << std::endl;
+
+				for (Json::ValueConstIterator it = parsedFromString.begin(); it != parsedFromString.end(); ++it)
 				{
-					std::string str1, str2;
-					std::string name(wsFix["assets"][i]["name"].asString());
+					const Json::Value& wsFix = *it;
 
-					std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
-					std::transform(name.begin(), name.end(), std::back_inserter(str2), ::tolower);
-
-					if (str1 == str2)
+					for (size_t i = 0; i < wsFix["assets"].size(); i++)
 					{
-						std::cout << "Found " << wsFix["assets"][i]["name"] << "on github" << std::endl;
-						auto szDownloadURL = wsFix["assets"][i]["browser_download_url"].asString();
-						auto szDownloadName = wsFix["assets"][i]["name"].asString();
-						auto szFileSize = wsFix["assets"][i]["size"].asString();
+						std::string str1, str2;
+						std::string name(wsFix["assets"][i]["name"].asString());
 
-						using namespace date;
-						int32_t y, m, d; // "updated_at": "2016-08-16T11:42:53Z"
-						sscanf_s(wsFix["assets"][i]["updated_at"].asCString(), "%d-%d-%d%*s", &y, &m, &d);
-						auto nRemoteFileUpdateTime = date::year(y) / date::month(m) / date::day(d);
-						auto now = floor<days>(std::chrono::system_clock::now());
-						return std::make_tuple((sys_days{ now } - sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+						std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
+						std::transform(name.begin(), name.end(), std::back_inserter(str2), ::tolower);
+
+						if (str1 == str2)
+						{
+							std::cout << "Found " << wsFix["assets"][i]["name"] << "on github" << std::endl;
+							auto szDownloadURL = wsFix["assets"][i]["browser_download_url"].asString();
+							auto szDownloadName = wsFix["assets"][i]["name"].asString();
+							auto szFileSize = wsFix["assets"][i]["size"].asString();
+
+							using namespace date;
+							int32_t y, m, d; // "updated_at": "2016-08-16T11:42:53Z"
+							sscanf_s(wsFix["assets"][i]["updated_at"].asCString(), "%d-%d-%d%*s", &y, &m, &d);
+							auto nRemoteFileUpdateTime = date::year(y) / date::month(m) / date::day(d);
+							auto now = floor<days>(std::chrono::system_clock::now());
+							return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+						}
 					}
 				}
 			}
 		}
-	}
-	else
-	{
-		std::cout << "Something wrong! " << "Status code: " << r.status_code << std::endl;
+		else
+		{
+			std::cout << "Something wrong! " << "Status code: " << r.status_code << std::endl;
+		}
 	}
 	return std::make_tuple(-1, "", "", "");
 }
@@ -221,8 +237,9 @@ void UpdateFile(std::string strFileName, std::string szDownloadURL, std::string 
 				std::transform(it->begin(), it->end(), std::back_inserter(lowcsIt), ::tolower);
 				std::transform(szFilePath.begin(), szFilePath.end(), std::back_inserter(lowcsFilePath), ::tolower);
 				std::transform(szFileName.begin(), szFileName.end(), std::back_inserter(lowcsFileName), ::tolower);
-				itFileName = *it; //it->substr(it->find(szFilePath) + 1);
+				itFileName = *it;
 				itFileName.erase(0, szFilePath.length());
+				std::replace(itFileName.begin(), itFileName.end(), '/', '\\');
 
 				if ((!bCheckboxChecked && lowcsIt.find(lowcsFileName) != std::string::npos) || (bCheckboxChecked && lowcsIt.find(lowcsFilePath) != std::string::npos))
 				{
@@ -242,9 +259,7 @@ void UpdateFile(std::string strFileName, std::string szDownloadURL, std::string 
 					}
 
 					zipFile.openEntry(it->c_str());
-					std::string outStream(modulePath + itFileName);
-					std::replace(outStream.begin(), outStream.end(), '/', '\\');
-					std::ofstream outputFile(outStream, std::ios::binary);
+					std::ofstream outputFile(fullPath, std::ios::binary);
 					zipFile >> outputFile;
 					outputFile.close();
 					std::cout << itFileName << " was updated succesfully." << std::endl;
@@ -341,7 +356,7 @@ void ShowUpdateDialog(std::string strFileName, std::string szDownloadURL, std::s
 		tdc.pButtons = aCustomButtons2;
 		tdc.cButtons = _countof(aCustomButtons2);
 		//tdc.pszMainIcon = TD_INFORMATION_ICON;
-		tdc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SHOW_MARQUEE_PROGRESS_BAR | TDF_ENABLE_HYPERLINKS;
+		tdc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SHOW_MARQUEE_PROGRESS_BAR | TDF_ENABLE_HYPERLINKS | TDF_USE_COMMAND_LINKS;
 		tdc.pszMainInstruction = L"Downloading Update...";
 		tdc.pszContent = L"";
 		tdc.pszVerificationText = L"";
@@ -378,7 +393,6 @@ void ShowUpdateDialog(std::string strFileName, std::string szDownloadURL, std::s
 				ShExecInfo.hInstApp = NULL;
 				ShellExecuteEx(&ShExecInfo);
 				//WaitForSingleObject(ShExecInfo.hProcess, INFINITE);
-
 				ExitProcess(0);
 			}
 		}
@@ -391,14 +405,15 @@ void ShowUpdateDialog(std::string strFileName, std::string szDownloadURL, std::s
 
 DWORD WINAPI ProcessFiles(LPVOID)
 {
-#ifdef _LOG
-	std::ofstream out(modulePath + "WFP.Updater.log");
-	std::cout.rdbuf(out.rdbuf());
-	std::cout << "Current directory: " << modulePath << std::endl;
-#endif
+	if (iniReader.ReadInteger("MISC", "OutputLogToFile", 0) != 0)
+	{
+		std::ofstream out(modulePath + "WFP.Updater.log");
+		std::cout.rdbuf(out.rdbuf());
+		std::cout << "Current directory: " << modulePath << std::endl;
+	}
 
 	bool bRes = false;
-	std::string name = std::string(iniReader.ReadString("FILE", "Name", ".*\\.WidescreenFix"));
+	std::string name = std::string(iniReader.ReadString("FILE", "NameRegExp", ".*\\.WidescreenFix"));
 	std::string ext = std::string(iniReader.ReadString("FILE", "Extension", "asi"));
 
 	WIN32_FIND_DATA fd;
