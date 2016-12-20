@@ -17,11 +17,14 @@
 #include <stdio.h>
 #include <string> 
 #include <tchar.h>
-#include <unzipper.h>
+#include <zipper/zipper.h>
+#include <zipper/unzipper.h>
+#include <zipper/tools.h>
 #include <windows.h>
 #include <IniReader.h>
 
 #pragma comment(lib, "libcurl_a.lib")
+#pragma comment(lib, "libZipper-static.lib")
 #pragma comment(lib, "zlibstat.lib")
 
 #include <RestartManager.h>

@@ -10,7 +10,8 @@ workspace "WFP.Updater"
    
    files { "source/includes/cpr/cpr/*.cpp" }
    files { "source/includes/jsoncpp/src/lib_json/*.cpp" }
-   files { "source/includes/zipper/*.cpp" }
+   files { "source/includes/zipper/zipper/*.cpp" }
+   files { "source/includes/zipper/minizip/*.cpp" }
    
    includedirs { "source/Header Files/" }
    includedirs { "source/includes/curl/builds/libcurl-vc14-x86-release-static-ipv6-sspi-winssl/include" }
@@ -19,9 +20,11 @@ workspace "WFP.Updater"
    includedirs { "source/includes/inireader" }
    includedirs { "source/includes/jsoncpp/include" }
    includedirs { "source/includes/zipper" }
-   includedirs { "source/includes/zlib-1.2.8" }
+   includedirs { "source/includes/zipper/minizip" }
+   includedirs { "source/includes/zipper/zlib" }
    
-   libdirs { "source/includes/zlib-1.2.8" }
+   libdirs { "source/includes/zipper/zlib" }
+   libdirs { "source/includes/zipper/lib" }
    libdirs { "source/includes/curl/builds/libcurl-vc14-x86-release-static-ipv6-sspi-winssl/lib" }
    
    defines { "INSECURE_CURL", "CURL_STATICLIB" }
@@ -51,6 +54,7 @@ project "WFP.Autoupdater"
    filter "configurations:Debug"
       defines { "DEBUG" }
       flags { "Symbols" }
+	  characterset ("MBCS")
 
    filter "configurations:Release"
       defines { "NDEBUG" }

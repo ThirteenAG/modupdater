@@ -1,12 +1,26 @@
 #include "stdafx.h"
 
+struct FileUpdateInfo
+{
+	std::wstring wszFullFilePath;
+	std::wstring wszFileName;
+	std::wstring wszDownloadURL;
+	std::wstring wszDownloadName;
+	int32_t nRemoteFileUpdatedDaysAgo;
+	int32_t nLocaFileUpdatedDaysAgo;
+	int32_t	nFileSize;
+};
+
 CIniReader iniReader;
-std::string modulePath, processPath;
-HWND DialogHwnd;
+std::vector<FileUpdateInfo> FilesToUpdate;
+std::wstring modulePath, processPath;
+std::wstring messagesBuffer;
+HWND MainHwnd, DialogHwnd;
 #define BUTTONID1 1001
 #define BUTTONID2 1002
 #define BUTTONID3 1003
 #define BUTTONID4 1004
+#define BUTTONID5 1005
 
 BOOL CheckForFileLock(LPCWSTR pFilePath, bool bReleaseLock = false)
 {
@@ -53,7 +67,7 @@ BOOL CheckForFileLock(LPCWSTR pFilePath, bool bReleaseLock = false)
 	return bResult;
 }
 
-void FindFilesRecursively(const std::wstring &directory, void(*callback)(std::wstring &s))
+void FindFilesRecursively(const std::wstring &directory, std::function<void(std::wstring, WIN32_FIND_DATAW)> callback)
 {
 	std::wstring tmp = directory + L"\\*";
 	WIN32_FIND_DATAW file;
@@ -73,7 +87,7 @@ void FindFilesRecursively(const std::wstring &directory, void(*callback)(std::ws
 			tmp = directory + L"\\" + std::wstring(file.cFileName);
 			if (!(file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
 			{
-				callback(tmp);
+				callback(tmp, file);
 			}
 
 			if (file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
@@ -89,16 +103,16 @@ void FindFilesRecursively(const std::wstring &directory, void(*callback)(std::ws
 
 void CleanupLockedFiles()
 {
-	auto cb = [](std::wstring &s)
+	auto cb = [](std::wstring &s, WIN32_FIND_DATAW)
 	{
-		static std::string const targetExtension(".deleteonnextlaunch");
-		if (s.size() >= targetExtension.size() && std::equal(s.end() - targetExtension.size(), s.end(),	targetExtension.begin())) 
+		static std::wstring const targetExtension(L".deleteonnextlaunch");
+		if (s.size() >= targetExtension.size() && std::equal(s.end() - targetExtension.size(), s.end(), targetExtension.begin()))
 		{
 			DeleteFileW(s.c_str());
 			std::wcout << L"Deleted " << s << std::endl;
 		}
 	};
-	
+
 	std::wstring modulePathWS; std::copy(modulePath.begin(), modulePath.end(), std::back_inserter(modulePathWS));
 	FindFilesRecursively(modulePathWS, cb);
 }
@@ -113,10 +127,10 @@ int32_t GetLocalFileInfo(FILETIME ftCreate, FILETIME ftLastAccess, FILETIME ftLa
 	return (sys_days{ now } - sys_days{ nLocalFileUpdateTime }).count();
 }
 
-std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std::string strFileName, std::string strExtension)
+std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std::wstring strFileName, std::wstring strExtension)
 {
 	strFileName.erase(strFileName.find_last_of('.'));
-	strFileName.append(".zip");
+	strFileName.append(L".zip");
 
 	for (size_t iniCount = 0;; iniCount++)
 	{
@@ -130,11 +144,11 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 		{
 			strURL = "Url" + std::to_string(iniCount);
 			strToken = "Token" + std::to_string(iniCount);
+
+			if (std::string(iniReader.ReadString("API", (char*)strURL.c_str(), "")).empty())
+				break;
 		}
-		
-		if (std::string(iniReader.ReadString("API", (char*)strURL.c_str(), "")).empty())
-			break;
-		
+
 		szUrl = std::string(iniReader.ReadString("API", (char*)&strURL[0], (iniCount == 0) ? "https://api.github.com/repos/ThirteenAG/WidescreenFixesPack/releases" : ""));
 		szToken = std::string(iniReader.ReadString("API", (char*)&strToken[0], (iniCount == 0) ? "63c1f1cc5782c8f1dafad05448e308f0cf8c9198" : ""));
 		szPerPage = std::string(iniReader.ReadString("API", "PerPage", "100"));
@@ -177,7 +191,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 							sscanf_s(wsFix["assets"][i]["updated_at"].asCString(), "%d-%d-%d%*s", &y, &m, &d);
 							auto nRemoteFileUpdateTime = date::year(y) / date::month(m) / date::day(d);
 							auto now = floor<days>(std::chrono::system_clock::now());
-							return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+							return std::make_tuple((sys_days{ now } - sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
 						}
 					}
 				}
@@ -191,91 +205,92 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 	return std::make_tuple(-1, "", "", "");
 }
 
-void UpdateFile(std::string strFileName, std::string szDownloadURL, std::string szDownloadName, bool bCheckboxChecked)
+void UpdateFile(std::wstring wzsFileName, std::wstring wszDownloadURL, std::wstring wszDownloadName, bool bCheckboxChecked)
 {
-	bool bSuccess = false;
-	std::cout << "Downloading " + szDownloadName << std::endl;
+	messagesBuffer = L"Downloading " + wszDownloadName;
+	std::wcout << messagesBuffer << std::endl;
+
+	std::string szDownloadURL; std::copy(wszDownloadURL.begin(), wszDownloadURL.end(), std::back_inserter(szDownloadURL));
 
 	auto r = cpr::Get(cpr::Url{ szDownloadURL });
-
+	
 	if (r.status_code == 200)
 	{
-		std::ofstream DownloadedZip(modulePath + szDownloadName, std::ios::binary | std::ios::out);
-		DownloadedZip << r.text;
-		DownloadedZip.close();
-		std::cout << "Download complete." << std::endl;
+		std::vector<uint8_t> buffer(r.text.begin(), r.text.end());
 
-		ziputils::unzipper zipFile;
-		zipFile.open(std::string(modulePath + szDownloadName).c_str());
-		auto filenames = zipFile.getFilenames();
-		std::string szFilePath, szFileName;
+		messagesBuffer = L"Download complete.";
+		std::wcout << messagesBuffer << std::endl;
 
-		auto itr = std::find_if(filenames.begin(), filenames.end(),	[&](auto &s) 
+		using namespace zipper;
+		Unzipper unzipper(buffer);
+		std::vector<ZipEntry> entries = unzipper.entries();
+		std::wstring szFilePath, szFileName;
+
+		auto itr = std::find_if(entries.begin(), entries.end(), [&wzsFileName, &szFilePath, &szFileName](auto &s)
 		{
-			auto s1 = s.substr(0, s.rfind('/') + 1);
-			auto s2 = s.substr(s.rfind('/') + 1);
-
-			if (s2.size() != strFileName.size())
+			auto s1 = s.name.substr(0, s.name.rfind('/') + 1);
+			auto s2 = s.name.substr(s.name.rfind('/') + 1);
+		
+			if (s2.size() != wzsFileName.size())
 				return false;
 			for (size_t i = 0; i < s2.size(); ++i)
-				if (::tolower(s2[i]) == ::tolower(strFileName[i]))
+				if (::tolower(s2[i]) == ::tolower(wzsFileName[i]))
 				{
-					szFilePath = s1;
-					szFileName = s2;
+					std::copy(s1.begin(), s1.end(), std::back_inserter(szFilePath));
+					std::copy(s2.begin(), s2.end(), std::back_inserter(szFileName));
 					return true;
 				}
 			return false;
 		});
-		
-		if (itr != filenames.end()) 
-		{
-			std::cout << "Processing archive..." << std::endl;
 
-			for (auto it = filenames.begin(); it != filenames.end(); it++)
+		if (itr != entries.end())
+		{
+			messagesBuffer = L"Processing " + wszDownloadName;
+			std::wcout << messagesBuffer << std::endl;
+		
+			for (auto it = entries.begin(); it != entries.end(); it++)
 			{
-				std::string lowcsIt, lowcsFilePath, lowcsFileName, itFileName;
-				std::transform(it->begin(), it->end(), std::back_inserter(lowcsIt), ::tolower);
+				std::wstring lowcsIt, lowcsFilePath, lowcsFileName, itFileName;
+				std::transform(it->name.begin(), it->name.end(), std::back_inserter(lowcsIt), ::tolower);
 				std::transform(szFilePath.begin(), szFilePath.end(), std::back_inserter(lowcsFilePath), ::tolower);
 				std::transform(szFileName.begin(), szFileName.end(), std::back_inserter(lowcsFileName), ::tolower);
-				itFileName = *it;
+				std::copy(it->name.begin(), it->name.end(), std::back_inserter(itFileName));
 				itFileName.erase(0, szFilePath.length());
-				std::replace(itFileName.begin(), itFileName.end(), '/', '\\');
-
-				if ((!bCheckboxChecked && lowcsIt.find(lowcsFileName) != std::string::npos) || (bCheckboxChecked && lowcsIt.find(lowcsFilePath) != std::string::npos))
+		
+				if (!itFileName.empty() && (itFileName.back() != L'/'))
 				{
-					std::string fullPath = std::string(modulePath + itFileName);
-					std::wstring PathWS; std::copy(fullPath.begin(), fullPath.end(), std::back_inserter(PathWS));
-					if (CheckForFileLock(PathWS.c_str()) == FALSE)
+					if ((!bCheckboxChecked && lowcsIt.find(lowcsFileName) != std::string::npos) || (bCheckboxChecked && lowcsIt.find(lowcsFilePath) != std::string::npos))
 					{
-						std::cout << itFileName << " is locked. Renaming..." << std::endl;
-						if (MoveFile(_T(fullPath.c_str()), _T(std::string(fullPath + ".deleteonnextlaunch").c_str())))
-							std::cout << itFileName << " was renamed to " << fullPath + ".deleteonnextlaunch" << std::endl;
+						std::wstring fullPath = modulePath + itFileName;
+						std::string fullPathStr; std::copy(fullPath.begin(), fullPath.end(), std::back_inserter(fullPathStr));
+						if (CheckForFileLock(fullPath.c_str()) == FALSE)
+						{
+							std::wcout << itFileName << L" is locked. Renaming..." << std::endl;
+							if (MoveFileW(_T(fullPath.c_str()), _T(std::wstring(fullPath + L".deleteonnextlaunch").c_str())))
+								std::wcout << itFileName << L" was renamed to " << fullPath + L".deleteonnextlaunch" << std::endl;
+							else
+								std::wcout << L"Error: " << GetLastError() << std::endl;
+						}
 						else
-							std::cout << "Error: " << GetLastError() << std::endl;
-					}
-					else
-					{
-						std::cout << itFileName << " is not locked. Overwriting..." << std::endl;
-					}
+						{
+							std::wcout << itFileName << L" is not locked. Overwriting..." << std::endl;
+						}
 
-					zipFile.openEntry(it->c_str());
-					std::ofstream outputFile(fullPath, std::ios::binary);
-					zipFile >> outputFile;
-					outputFile.close();
-					std::cout << itFileName << " was updated succesfully." << std::endl;
-					bSuccess = true;
+						std::ofstream outputFile(fullPath, std::ios::binary);
+						unzipper.extractEntryToStream(it->name, outputFile);
+						outputFile.close();
+
+						messagesBuffer = itFileName + L" was updated succesfully.";
+						std::wcout << messagesBuffer << std::endl;
+					}
 				}
 			}
 		}
+		unzipper.close();
 	}
-
-	if (bSuccess)
-		SendMessage(DialogHwnd, TDM_UPDATE_ELEMENT_TEXT, TDE_MAIN_INSTRUCTION, (LPARAM)L"Update completed succesfully.");
-	else
-		SendMessage(DialogHwnd, TDM_UPDATE_ELEMENT_TEXT, TDE_MAIN_INSTRUCTION, (LPARAM)L"An error occured during the update.");
 }
 
-void ShowUpdateDialog(std::string strFileName, std::string szDownloadURL, std::string szDownloadName, int32_t nRemoteFileUpdatedDaysAgo, int32_t nLocaFileUpdatedDaysAgo, int32_t nFileSize)
+void ShowUpdateDialog()
 {
 	auto TaskDialogCallbackProc = [](HWND hwnd, UINT uNotification, WPARAM wParam, LPARAM lParam, LONG_PTR dwRefData)->HRESULT
 	{
@@ -283,10 +298,28 @@ void ShowUpdateDialog(std::string strFileName, std::string szDownloadURL, std::s
 		{
 		case TDN_DIALOG_CONSTRUCTED:
 			DialogHwnd = hwnd;
-			SendMessage(hwnd, TDM_SET_MARQUEE_PROGRESS_BAR, 1, 0);
-			SendMessage(hwnd, TDM_SET_PROGRESS_BAR_MARQUEE, 1, 0);
+			if (dwRefData == 1)
+			{
+				SendMessage(hwnd, TDM_SET_MARQUEE_PROGRESS_BAR, 1, 0);
+				SendMessage(hwnd, TDM_SET_PROGRESS_BAR_MARQUEE, 1, 0);
+			}
+			else
+			{
+				if (dwRefData == 2)
+				{
+					SendMessage(DialogHwnd, TDM_SET_MARQUEE_PROGRESS_BAR, FALSE, 0);
+					SendMessage(DialogHwnd, TDM_SET_PROGRESS_BAR_POS, 100, 0);
+				}
+			}
 			break;
 		case TDN_BUTTON_CLICKED:
+			break;
+		case TDN_TIMER:
+			if (dwRefData == 1)
+			{
+				messagesBuffer.resize(55);
+				SendMessage(DialogHwnd, TDM_UPDATE_ELEMENT_TEXT, TDE_CONTENT, (LPARAM)messagesBuffer.c_str());
+			}
 			break;
 		case TDN_HYPERLINK_CLICKED:
 			ShellExecuteW(hwnd, _T(L"open"), (LPCWSTR)lParam, NULL, NULL, SW_SHOW);
@@ -310,38 +343,57 @@ void ShowUpdateDialog(std::string strFileName, std::string szDownloadURL, std::s
 		return std::string(out.str() + ' ' + sizes[i]);
 	};
 
-	TASKDIALOGCONFIG tdc = { sizeof(TASKDIALOGCONFIG) };
-	auto szTitle = L"WFP.Updater";
-	auto szCheckboxText = L"Update all downloaded files";
-	auto szHeader = std::string("An update for " + strFileName + " is available");
-	auto szBodyText = std::string("Local file updated " + std::to_string(nLocaFileUpdatedDaysAgo) + " days ago.\n" + 
-		"Remote file updated " + std::to_string(nRemoteFileUpdatedDaysAgo) + " days ago.\n" + "\nDo you want to download this update?");
-	auto szButton1Text = std::string("Download and install the update now\n" + szDownloadName + " / " + formatBytes(nFileSize));
-	std::string szURL = std::string(iniReader.ReadString("FILE", "WebUrl", "https://thirteenag.github.io/wfp"));
-	auto szFooter = std::string("<a href=\"" + szURL + "\">"+ szURL + "</a>");
-
-	std::wstring szHeaderws; std::copy(szHeader.begin(), szHeader.end(), std::back_inserter(szHeaderws));
-	std::wstring szBodyTextws; std::copy(szBodyText.begin(), szBodyText.end(), std::back_inserter(szBodyTextws));
-	std::wstring szButton1ws; std::copy(szButton1Text.begin(), szButton1Text.end(), std::back_inserter(szButton1ws));
-	std::wstring szFooterws; std::copy(szFooter.begin(), szFooter.end(), std::back_inserter(szFooterws));
-
-	TASKDIALOG_BUTTON aCustomButtons[] = {
-		{ BUTTONID1, szButton1ws.c_str() },
-		{ BUTTONID2, L"Do not download the update." },
+	auto formatBytesW = [&formatBytes](int32_t bytes, int32_t precision = 2)->std::wstring
+	{
+		auto str = formatBytes(bytes, precision);
+		std::wstring ret; std::copy(str.begin(), str.end(), std::back_inserter(ret));
+		return ret;
 	};
 
+	TASKDIALOGCONFIG tdc = { sizeof(TASKDIALOGCONFIG) };
+	auto szTitle = L"WFP.Updater";
+	auto szCheckboxText = L"Update all downloaded files.";
+	auto szHeader = std::wstring(L"Updates available:\n");
+	std::wstring szBodyText;
+
+	int32_t nTotalUpdateSize = 0;
+
+	for (auto &it : FilesToUpdate)
+	{
+		szBodyText += L"<a href=\"" + it.wszDownloadURL + L"\">" + it.wszFileName + L"</a> ";
+		//szBodyText += L"\n";
+		szBodyText += L"(" + it.wszDownloadName + L" / " + formatBytesW(it.nFileSize) + L")" L"\n";
+		szBodyText += L"Remote file updated " + std::to_wstring(it.nRemoteFileUpdatedDaysAgo) + L" days ago." L"\n";
+		szBodyText += L"Local file updated " + std::to_wstring(it.nLocaFileUpdatedDaysAgo) + L" days ago." L"\n";
+		szBodyText += L"\n";
+		nTotalUpdateSize += it.nFileSize;
+	}
+	szBodyText += L"Do you want to download these updates?";
+
+	auto szButton1Text = std::wstring(L"Download and install updates now\n" + formatBytesW(nTotalUpdateSize));
+
+	std::string szURL = std::string(iniReader.ReadString("FILE", "WebUrl", "https://thirteenag.github.io/wfp"));
+	auto szFooter = std::string("<a href=\"" + szURL + "\">" + szURL + "</a>");
+	std::wstring szFooterws; std::copy(szFooter.begin(), szFooter.end(), std::back_inserter(szFooterws));
+	
+	TASKDIALOG_BUTTON aCustomButtons[] = {
+		{ BUTTONID1, szButton1Text.c_str() },
+		{ BUTTONID2, L"Cancel" },
+	};
+	
 	tdc.hwndParent = NULL;
-	tdc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS | TDF_ENABLE_HYPERLINKS;
+	tdc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS | TDF_ENABLE_HYPERLINKS | TDF_SIZE_TO_CONTENT | TDF_CAN_BE_MINIMIZED;
 	tdc.pButtons = aCustomButtons;
 	tdc.cButtons = _countof(aCustomButtons);
-	//tdc.pszMainIcon = TD_INFORMATION_ICON;
+	//tdc.pszMainIcon = TD_WARNING_ICON;
 	tdc.pszWindowTitle = szTitle;
-	tdc.pszMainInstruction = szHeaderws.c_str();
-	tdc.pszContent = szBodyTextws.c_str();
+	tdc.pszMainInstruction = szHeader.c_str();
+	tdc.pszContent = szBodyText.c_str();
 	tdc.pszVerificationText = szCheckboxText;
 	tdc.pszFooter = szFooterws.c_str();
 	tdc.pszFooterIcon = TD_INFORMATION_ICON;
 	tdc.pfCallback = TaskDialogCallbackProc;
+	tdc.lpCallbackData = 0;
 	auto nClickedBtnID = -1;
 	auto bCheckboxChecked = 0;
 	auto hr = TaskDialogIndirect(&tdc, &nClickedBtnID, nullptr, &bCheckboxChecked);
@@ -349,142 +401,203 @@ void ShowUpdateDialog(std::string strFileName, std::string szDownloadURL, std::s
 	if (SUCCEEDED(hr) && nClickedBtnID == BUTTONID1)
 	{
 		TASKDIALOG_BUTTON aCustomButtons2[] = {
-			{ BUTTONID3, L"Restart the game to apply changes" },
-			{ BUTTONID4, L"Continue" },
+			{ BUTTONID3, L"Cancel" },
 		};
 
 		tdc.pButtons = aCustomButtons2;
 		tdc.cButtons = _countof(aCustomButtons2);
 		//tdc.pszMainIcon = TD_INFORMATION_ICON;
-		tdc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SHOW_MARQUEE_PROGRESS_BAR | TDF_ENABLE_HYPERLINKS | TDF_USE_COMMAND_LINKS;
+		tdc.dwFlags |= TDF_SHOW_MARQUEE_PROGRESS_BAR;
+		tdc.dwFlags |= TDF_CALLBACK_TIMER;
 		tdc.pszMainInstruction = L"Downloading Update...";
-		tdc.pszContent = L"";
+		tdc.pszContent = L"Preparing to download...";
 		tdc.pszVerificationText = L"";
+		tdc.lpCallbackData = 1;
 
-		bool bSkipUpdateCompleteDialog = iniReader.ReadInteger("MISC", "SkipUpdateCompleteDialog", 0) != 0;
-
-		std::thread t([&strFileName, &szDownloadURL, &szDownloadName, &bCheckboxChecked, &bSkipUpdateCompleteDialog]
+		bool bNotCanceledorError = false;
+		std::thread t([&bCheckboxChecked, &bNotCanceledorError]
 		{
-			UpdateFile(strFileName, szDownloadURL, szDownloadName, bCheckboxChecked != 0);
-			SendMessage(DialogHwnd, TDM_SET_MARQUEE_PROGRESS_BAR, FALSE, 0);
-			SendMessage(DialogHwnd, TDM_SET_PROGRESS_BAR_POS, 100, 0);
-			//SendMessage(DialogHwnd, TDM_UPDATE_ELEMENT_TEXT, TDE_CONTENT, (LPARAM)L"._.");
-			if (bSkipUpdateCompleteDialog)
-				SendMessage(DialogHwnd, TDM_CLICK_BUTTON, static_cast<WPARAM>(TDCBF_OK_BUTTON), 0);
+			for (auto &it : FilesToUpdate)
+			{
+				UpdateFile(it.wszFileName, it.wszDownloadURL, it.wszDownloadName, bCheckboxChecked != 0);
+			}
+			SendMessage(DialogHwnd, TDM_CLICK_BUTTON, static_cast<WPARAM>(TDCBF_OK_BUTTON), 0);
+			bNotCanceledorError = true;
 		});
 
 		hr = TaskDialogIndirect(&tdc, &nClickedBtnID, nullptr, nullptr);
-
+		
 		if (SUCCEEDED(hr))
 		{
 			t.join();
-
-			if (nClickedBtnID == BUTTONID3)
+		
+			if (bNotCanceledorError && nClickedBtnID != BUTTONID3)
 			{
-				SHELLEXECUTEINFO ShExecInfo = { 0 };
-				ShExecInfo.cbSize = sizeof(SHELLEXECUTEINFO);
-				ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
-				ShExecInfo.hwnd = NULL;
-				ShExecInfo.lpVerb = NULL;
-				ShExecInfo.lpFile = processPath.c_str();
-				ShExecInfo.lpParameters = "";
-				ShExecInfo.lpDirectory = NULL;
-				ShExecInfo.nShow = SW_SHOWNORMAL;
-				ShExecInfo.hInstApp = NULL;
-				ShellExecuteEx(&ShExecInfo);
-				//WaitForSingleObject(ShExecInfo.hProcess, INFINITE);
-				ExitProcess(0);
+				TASKDIALOG_BUTTON aCustomButtons3[] = {
+					{ BUTTONID4, L"Restart the game to apply changes" },
+					{ BUTTONID5, L"Continue" },
+				};
+
+				tdc.pButtons = aCustomButtons3;
+				tdc.cButtons = _countof(aCustomButtons3);
+				tdc.pszMainInstruction = L"Update completed succesfully.";
+				tdc.pszContent = L"";
+				tdc.lpCallbackData = 2;
+				tdc.dwFlags |= TDF_CALLBACK_TIMER;
+
+				hr = TaskDialogIndirect(&tdc, &nClickedBtnID, nullptr, nullptr);
+
+				bool bSkipUpdateCompleteDialog = iniReader.ReadInteger("MISC", "SkipUpdateCompleteDialog", 0) != 0;
+				if (bSkipUpdateCompleteDialog)
+					SendMessage(DialogHwnd, TDM_CLICK_BUTTON, static_cast<WPARAM>(TDCBF_OK_BUTTON), 0);
+
+				if (nClickedBtnID == BUTTONID4)
+				{
+					SHELLEXECUTEINFOW ShExecInfo = { 0 };
+					ShExecInfo.cbSize = sizeof(SHELLEXECUTEINFOW);
+					ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+					ShExecInfo.hwnd = NULL;
+					ShExecInfo.lpVerb = NULL;
+					ShExecInfo.lpFile = processPath.c_str();
+					ShExecInfo.lpParameters = L"";
+					ShExecInfo.lpDirectory = NULL;
+					ShExecInfo.nShow = SW_SHOWNORMAL;
+					ShExecInfo.hInstApp = NULL;
+					ShellExecuteExW(&ShExecInfo);
+					//WaitForSingleObject(ShExecInfo.hProcess, INFINITE);
+					ExitProcess(0);
+				}
+				else
+				{
+					if (nClickedBtnID == BUTTONID5)
+					{
+						SwitchToThisWindow(MainHwnd, TRUE);
+					}
+				}
+			}
+			else
+			{
+				std::wcout << L"Update cancelled or error occured." << std::endl;
 			}
 		}
 	}
 	else
 	{
-		std::cout << "Update cancelled." << std::endl;
+		std::wcout << L"Update cancelled." << std::endl;
 	}
 }
 
 DWORD WINAPI ProcessFiles(LPVOID)
 {
+	CleanupLockedFiles();
+
 	if (iniReader.ReadInteger("MISC", "OutputLogToFile", 0) != 0)
 	{
-		std::ofstream out(modulePath + "WFP.Updater.log");
+		std::ofstream out(modulePath + L"WFP.Updater.log");
 		std::cout.rdbuf(out.rdbuf());
-		std::cout << "Current directory: " << modulePath << std::endl;
+		std::wcout << "Current directory: " << modulePath << std::endl;
 	}
 
-	bool bRes = false;
-	std::string name = std::string(iniReader.ReadString("FILE", "NameRegExp", ".*\\.WidescreenFix"));
-	std::string ext = std::string(iniReader.ReadString("FILE", "Extension", "asi"));
+	bool bAlwaysUpdate = iniReader.ReadInteger("DEBUG", "AlwaysUpdate", 0) != 0;
+	std::string nameStr = std::string(iniReader.ReadString("FILE", "NameRegExp", ".*\\.WidescreenFix"));
+	std::string extStr = std::string(iniReader.ReadString("FILE", "Extension", "asi"));
 
-	WIN32_FIND_DATA fd;
-	HANDLE asiFile = FindFirstFile(std::string(modulePath + "*." + ext).c_str(), &fd);
-	if (asiFile != INVALID_HANDLE_VALUE)
+	std::wstring name; std::copy(nameStr.begin(), nameStr.end(), std::back_inserter(name));
+	std::wstring ext;  std::copy(extStr.begin(), extStr.end(), std::back_inserter(ext));
+
+	std::wstring name_ext(name + L"." + ext);
+	std::wregex wregex(name_ext, std::regex::icase);
+
+	auto cb = [&name, &ext, &wregex, &bAlwaysUpdate](std::wstring &s, WIN32_FIND_DATAW &fd)
 	{
-		do 
+		static std::wstring const targetExtension(L"." + ext);
+		if (s.size() >= targetExtension.size() && std::equal(s.end() - targetExtension.size(), s.end(), targetExtension.begin()))
 		{
-			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) 
+			auto strFileName = s.substr(s.rfind('\\') + 1);
+			if (std::regex_match(strFileName, wregex))
 			{
-				auto strFileName = std::string(fd.cFileName);
-				std::regex regex(name + "." + ext, std::regex::icase);
+				std::wcout << strFileName << " " << "found." << std::endl;
+				int32_t nLocaFileUpdatedDaysAgo = GetLocalFileInfo(fd.ftCreationTime, fd.ftLastAccessTime, fd.ftLastWriteTime);
+				auto RemoteInfo = GetRemoteFileInfo(strFileName, ext);
+				auto nRemoteFileUpdatedDaysAgo = std::get<0>(RemoteInfo);
+				auto szDownloadURL = std::get<1>(RemoteInfo);
+				auto szDownloadName = std::get<2>(RemoteInfo);
+				auto szFileSize = std::get<3>(RemoteInfo);
 
-				if (std::regex_match(strFileName, regex))
+				std::cout << "Download link: " << szDownloadURL << std::endl;
+				std::cout << "Remote file updated " << nRemoteFileUpdatedDaysAgo << " days ago." << std::endl;
+				std::cout << "Local file updated " << nLocaFileUpdatedDaysAgo << " days ago." << std::endl;
+
+				if (nRemoteFileUpdatedDaysAgo != -1 && !szDownloadURL.empty())
 				{
-					bRes = true;
-					std::cout << fd.cFileName << " " << "found." << std::endl;
-					int32_t nLocaFileUpdatedDaysAgo = GetLocalFileInfo(fd.ftCreationTime, fd.ftLastAccessTime, fd.ftLastWriteTime);
-					auto RemoteInfo = GetRemoteFileInfo(strFileName, ext);
-					auto nRemoteFileUpdatedDaysAgo = std::get<0>(RemoteInfo);
-					auto szDownloadURL = std::get<1>(RemoteInfo);
-					auto szDownloadName = std::get<2>(RemoteInfo);
-					auto szFileSize = std::get<3>(RemoteInfo);
-
-					if (nRemoteFileUpdatedDaysAgo != -1 && !szDownloadURL.empty())
+					if (nRemoteFileUpdatedDaysAgo < nLocaFileUpdatedDaysAgo || bAlwaysUpdate)
 					{
-						if (nRemoteFileUpdatedDaysAgo < nLocaFileUpdatedDaysAgo)
-						{
-							auto nFileSize = std::stoi(szFileSize);
-							std::cout << "Download link: " << szDownloadURL << std::endl;
-							std::cout << "Remote file updated " << nRemoteFileUpdatedDaysAgo << " days ago." << std::endl;
-							std::cout << "Local file updated " << nLocaFileUpdatedDaysAgo << " days ago." << std::endl;
-							std::cout << "File size: " << nFileSize << "KB." << std::endl;
+						auto nFileSize = std::stoi(szFileSize);
+						std::cout << "Download link: " << szDownloadURL << std::endl;
+						std::cout << "Remote file updated " << nRemoteFileUpdatedDaysAgo << " days ago." << std::endl;
+						std::cout << "Local file updated " << nLocaFileUpdatedDaysAgo << " days ago." << std::endl;
+						std::cout << "File size: " << nFileSize << "KB." << std::endl;
 
-							ShowUpdateDialog(strFileName, szDownloadURL, szDownloadName, nRemoteFileUpdatedDaysAgo, nLocaFileUpdatedDaysAgo, nFileSize);
-						}
-						else
-						{
-							std::cout << "No updates available." << std::endl;
-							//MessageBox(NULL, "No updates available.", "WFP.Updater", MB_OK | MB_ICONINFORMATION);
-						}
+						FileUpdateInfo fui;
+						fui.wszFullFilePath = s;
+						std::copy(strFileName.begin(), strFileName.end(), std::back_inserter(fui.wszFileName));
+						std::copy(szDownloadURL.begin(), szDownloadURL.end(), std::back_inserter(fui.wszDownloadURL));
+						std::copy(szDownloadName.begin(), szDownloadName.end(), std::back_inserter(fui.wszDownloadName));
+						fui.nRemoteFileUpdatedDaysAgo = nRemoteFileUpdatedDaysAgo;
+						fui.nLocaFileUpdatedDaysAgo = nLocaFileUpdatedDaysAgo;
+						fui.nFileSize = nFileSize;
+
+						FilesToUpdate.push_back(fui);
 					}
 					else
 					{
-						std::cout << "Error." << std::endl;
+						std::wcout << L"No updates available." << std::endl;
+						//MessageBox(NULL, "No updates available.", "WFP.Updater", MB_OK | MB_ICONINFORMATION);
 					}
-					std::cout << std::endl;
 				}
+				else
+				{
+					std::wcout << L"Error." << std::endl;
+				}
+				std::wcout << std::endl;
 			}
+		}
+	};
 
-		} while (FindNextFile(asiFile, &fd));
-		FindClose(asiFile);
-	}
-	
-	if (!bRes)
-		std::cout << "No files found to process." << std::endl;
+	std::wstring modulePathWS; std::copy(modulePath.begin(), modulePath.end(), std::back_inserter(modulePathWS));
+	FindFilesRecursively(modulePathWS, cb);
 
-	CleanupLockedFiles();
+	if (!FilesToUpdate.empty())
+		ShowUpdateDialog();
+	else
+		std::wcout << L"No files found to process." << std::endl;
+
 	return 0;
 }
 
 void Init()
 {
-	char buffer[MAX_PATH];
+	auto EnumWindowsProc = [](HWND hwnd, LPARAM lParam)->BOOL
+	{
+		DWORD lpdwProcessId;
+		GetWindowThreadProcessId(hwnd, &lpdwProcessId);
+		if (lpdwProcessId == lParam)
+		{
+			MainHwnd = hwnd;
+			return FALSE;
+		}
+		return TRUE;
+	};
+	EnumWindows(EnumWindowsProc, GetCurrentProcessId());
+
+	wchar_t buffer[MAX_PATH];
 	HMODULE hm = NULL;
 	if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&Init, &hm))
-		std::cout << "GetModuleHandle returned " << GetLastError() << std::endl;
-	GetModuleFileName(hm, buffer, sizeof(buffer));
-	modulePath = std::string(buffer).substr(0, std::string(buffer).rfind('\\') + 1);
-	GetModuleFileName(NULL, buffer, sizeof(buffer));
-	processPath = std::string(buffer);
+		std::wcout << L"GetModuleHandle returned " << GetLastError() << std::endl;
+	GetModuleFileNameW(hm, buffer, sizeof(buffer));
+	modulePath = std::wstring(buffer).substr(0, std::wstring(buffer).rfind('\\') + 1);
+	GetModuleFileNameW(NULL, buffer, sizeof(buffer));
+	processPath = std::wstring(buffer);
 
 	iniReader.SetIniPath();
 
