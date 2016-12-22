@@ -149,6 +149,13 @@ std::wstring GetLongestCommonSubstring(const std::wstring & first, const std::ws
 	return *(commonSubs.begin());
 }
 
+size_t find_nth(const std::string& haystack, size_t pos, const std::string& needle, size_t nth)
+{
+	size_t found_pos = haystack.find(needle, pos);
+	if (0 == nth || std::string::npos == found_pos)  return found_pos;
+	return find_nth(haystack, found_pos + 1, needle, nth - 1);
+}
+
 std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std::wstring strFileName, std::wstring strExtension)
 {
 	strFileName.erase(strFileName.find_last_of('.'));
@@ -223,6 +230,25 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 		}
 		else
 		{
+			if (szUrl.find("node-js-geturl") != std::string::npos)
+			{
+				auto r = cpr::Get(cpr::Url{ szUrl });
+				
+				if (r.text.empty())
+					continue;
+
+				if (r.text.find("../") != std::string::npos)
+				{
+					auto sstr1 = std::string("?url=(");
+					auto sstr2 = szUrl.rfind(sstr1) + sstr1.length();
+					szUrl = szUrl.substr(sstr2);
+					szUrl = szUrl.substr(0, find_nth(szUrl, 0, std::string("/"), 2));
+					szUrl += r.text.substr(2);
+				}
+				else
+					szUrl = r.text;
+			}
+
 			std::cout << "Connecting to " << szUrl << std::endl;
 
 			auto rHead = cpr::Head(cpr::Url{ szUrl });
