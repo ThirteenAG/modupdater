@@ -263,6 +263,9 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 			std::wstring str1, str2;
 			std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
 			std::transform(szDownloadName.begin(), szDownloadName.end(), std::back_inserter(str2), ::tolower);
+			str1 = str1.substr(0, str1.find_last_of(L"."));
+			str2 = str2.substr(0, str2.find_last_of(L"."));
+
 			auto lcs = GetLongestCommonSubstring(str1, str2);
 
 			if (lcs.length() >= std::string("skygfx").length())
