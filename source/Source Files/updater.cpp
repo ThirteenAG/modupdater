@@ -127,6 +127,28 @@ int32_t GetLocalFileInfo(FILETIME ftCreate, FILETIME ftLastAccess, FILETIME ftLa
 	return (sys_days{ now } - sys_days{ nLocalFileUpdateTime }).count();
 }
 
+std::wstring GetLongestCommonSubstring(const std::wstring & first, const std::wstring & second)
+{
+	auto findSubstrings = [](const std::wstring& word, std::set<std::wstring>& substrings)->void
+	{
+		int l = word.length();
+		for (int start = 0; start < l; start++) {
+			for (int length = 1; length < l - start + 1; length++) {
+				substrings.insert(word.substr(start, length));
+			}
+		}
+	};
+
+	std::set<std::wstring> firstSubstrings, secondSubstrings;
+	findSubstrings(first, firstSubstrings);
+	findSubstrings(second, secondSubstrings);
+	std::set<std::wstring> common;
+	std::set_intersection(firstSubstrings.begin(), firstSubstrings.end(), secondSubstrings.begin(), secondSubstrings.end(), std::inserter(common, common.begin()));
+	std::vector<std::wstring> commonSubs(common.begin(), common.end());
+	std::sort(commonSubs.begin(), commonSubs.end(), [](const std::wstring &s1, const std::wstring &s2) { return s1.length() > s2.length(); });
+	return *(commonSubs.begin());
+}
+
 std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std::wstring strFileName, std::wstring strExtension)
 {
 	strFileName.erase(strFileName.find_last_of('.'));
@@ -151,7 +173,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 		if (szUrl.find("api.github.com") != std::string::npos)
 		{
 			std::cout << "Connecting to GitHub..." << std::endl;
-			cpr::Response r = cpr::Get(cpr::Url{ szUrl });
+			auto r = cpr::Get(cpr::Url{ szUrl });
 
 			if (r.status_code == 200)
 			{
@@ -212,15 +234,26 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 			std::string szDownloadName = tempStr.substr(0, (endPos == 0) ? std::string::npos : endPos);
 			std::string szFileSize = rHead.header["Content-Length"];
 
-			std::tm t;
-			std::istringstream ss(rHead.header["Last-Modified"]); // Wed, 27 Jul 2016 18:43:42 GMT
-			ss >> std::get_time(&t, "%a, %d %b %Y %H:%M:%S %Z");
+			std::wstring str1, str2;
+			std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
+			std::transform(szDownloadName.begin(), szDownloadName.end(), std::back_inserter(str2), ::tolower);
+			auto lcs = GetLongestCommonSubstring(str1, str2);
 
-			using namespace date;
-			int32_t y, m, d; 
-			auto nRemoteFileUpdateTime = date::year(t.tm_year + 1900) / date::month(t.tm_mon + 1) / date::day(t.tm_mday);
-			auto now = floor<days>(std::chrono::system_clock::now());
-			return std::make_tuple((sys_days{ now } - sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+			if (lcs.length() >= std::string("skygfx").length())
+			{
+				std::tm t;
+				std::istringstream ss(rHead.header["Last-Modified"]); // Wed, 27 Jul 2016 18:43:42 GMT
+				ss >> std::get_time(&t, "%a, %d %b %Y %H:%M:%S %Z");
+
+				using namespace date;
+				auto nRemoteFileUpdateTime = date::year(t.tm_year + 1900) / date::month(t.tm_mon + 1) / date::day(t.tm_mday);
+				auto now = floor<days>(std::chrono::system_clock::now());
+				return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+			}
+			else
+			{
+				std::wcout << L"Seems like this archive doesn't contain " << strFileName << std::endl;
+			}
 		}
 	}
 	return std::make_tuple(-1, "", "", "");
@@ -538,6 +571,8 @@ DWORD WINAPI ProcessFiles(LPVOID)
 		if (s.size() >= targetExtension.size() && std::equal(s.end() - targetExtension.size(), s.end(), targetExtension.begin()))
 		{
 			auto strFileName = s.substr(s.rfind('\\') + 1);
+			auto nameCheck = strFileName.substr(0, s.rfind('.'));
+
 			if (std::regex_match(strFileName, wregex))
 			{
 				std::wcout << strFileName << " " << "found." << std::endl;

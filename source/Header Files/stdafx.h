@@ -14,6 +14,7 @@
 #include <json/writer.h>
 #include <numeric>
 #include <regex>
+#include <set>
 #include <stdio.h>
 #include <string> 
 #include <tchar.h>
