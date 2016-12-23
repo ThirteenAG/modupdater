@@ -6,33 +6,35 @@ workspace "WFP.Updater"
    files { "source/Header Files/*.h" }
    files { "source/Source Files/*.cpp", "source/Source Files/*.c" }
    
-   files { "source/includes/resources/*.rc" }
+   files { "external/resources/*.rc" }
    
-   files { "source/includes/cpr/cpr/*.cpp" }
-   files { "source/includes/jsoncpp/src/lib_json/*.cpp" }
-   files { "source/includes/zipper/zipper/*.cpp" }
-   files { "source/includes/zipper/minizip/*.cpp" }
+   files { "external/cpr/cpr/*.cpp" }
+   files { "external/jsoncpp/src/lib_json/*.cpp" }
+   files { "external/zipper/zipper/*.cpp" }
+   files { "external/zipper/minizip/*.cpp" }
    
    includedirs { "source/Header Files/" }
-   includedirs { "source/includes/curl/builds/libcurl-vc14-x86-release-static-ipv6-sspi-winssl/include" }
-   includedirs { "source/includes/cpr/include" }
-   includedirs { "source/includes/date" }
-   includedirs { "source/includes/inireader" }
-   includedirs { "source/includes/jsoncpp/include" }
-   includedirs { "source/includes/zipper" }
-   includedirs { "source/includes/zipper/minizip" }
-   includedirs { "source/includes/zipper/zlib" }
+   includedirs { "external/curl/builds/libcurl-vc14-x86-release-static-ipv6-sspi-winssl/include" }
+   includedirs { "external/cpr/include" }
+   includedirs { "external/date" }
+   includedirs { "external/inireader" }
+   includedirs { "external/jsoncpp/include" }
+   includedirs { "external/zipper" }
+   includedirs { "external/zipper/minizip" }
+   includedirs { "external/zipper/zlib" }
    
-   libdirs { "source/includes/zipper/zlib" }
-   libdirs { "source/includes/zipper/lib" }
-   libdirs { "source/includes/curl/builds/libcurl-vc14-x86-release-static-ipv6-sspi-winssl/lib" }
+   libdirs { "external/zipper/zlib" }
+   libdirs { "external/zipper/lib" }
+   libdirs { "external/curl/builds/libcurl-vc14-x86-release-static-ipv6-sspi-winssl/lib" }
    
    defines { "INSECURE_CURL", "CURL_STATICLIB" }
 
-project "WFP.CheckForUpdates"
+project "WFP.UpdaterApp"
    kind "ConsoleApp"
    language "C++"
    targetdir "bin/%{cfg.buildcfg}"
+   targetname "WFP.Updater"
+   targetextension ".exe"
 
    filter "configurations:Debug"
       defines { "DEBUG" }
@@ -45,10 +47,11 @@ project "WFP.CheckForUpdates"
 	  characterset ("MBCS")
 	  
 	  
-project "WFP.Autoupdater"
+project "WFP.UpdaterPlugin"
    kind "SharedLib"
    language "C++"
    targetdir "bin/%{cfg.buildcfg}"
+   targetname "WFP.Updater"
    targetextension ".asi"
 
    filter "configurations:Debug"

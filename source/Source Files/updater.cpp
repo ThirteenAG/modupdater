@@ -237,13 +237,13 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 				if (r.text.empty())
 					continue;
 
-				if (r.text.find("../") != std::string::npos)
+				if (r.text.at(0) == '.' || r.text.at(0) == '/')
 				{
 					auto sstr1 = std::string("?url=(");
 					auto sstr2 = szUrl.rfind(sstr1) + sstr1.length();
 					szUrl = szUrl.substr(sstr2);
 					szUrl = szUrl.substr(0, find_nth(szUrl, 0, std::string("/"), 2));
-					szUrl += r.text.substr(2);
+					szUrl += r.text.substr(r.text.find_first_of('/'));
 				}
 				else
 					szUrl = r.text;
@@ -281,7 +281,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 			}
 			else
 			{
-				std::wcout << L"Seems like this archive doesn't contain " << strFileName << std::endl;
+				std::wcout << L"Seems like this archive doesn't contain " << strFileName.substr(0, strFileName.find_last_of(L".")) << std::endl;
 			}
 		}
 	}
@@ -639,10 +639,10 @@ DWORD WINAPI ProcessFiles(LPVOID)
 						//MessageBox(NULL, "No updates available.", "WFP.Updater", MB_OK | MB_ICONINFORMATION);
 					}
 				}
-				else
-				{
-					std::wcout << L"Error." << std::endl;
-				}
+				//else
+				//{
+				//	std::wcout << L"Error." << std::endl;
+				//}
 				std::wcout << std::endl;
 			}
 		}
