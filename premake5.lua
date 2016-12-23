@@ -1,5 +1,5 @@
 -- premake5.lua
-workspace "WFP.Updater"
+workspace "modupdater"
    configurations { "Release", "Debug" }
    location "build"
    
@@ -29,11 +29,11 @@ workspace "WFP.Updater"
    
    defines { "INSECURE_CURL", "CURL_STATICLIB" }
 
-project "WFP.UpdaterApp"
+project "UpdaterApp"
    kind "ConsoleApp"
    language "C++"
    targetdir "bin/%{cfg.buildcfg}"
-   targetname "WFP.Updater"
+   targetname "modupdater"
    targetextension ".exe"
 
    filter "configurations:Debug"
@@ -47,11 +47,11 @@ project "WFP.UpdaterApp"
 	  characterset ("MBCS")
 	  
 	  
-project "WFP.UpdaterPlugin"
+project "UpdaterPlugin"
    kind "SharedLib"
    language "C++"
    targetdir "bin/%{cfg.buildcfg}"
-   targetname "WFP.Updater"
+   targetname "modupdater"
    targetextension ".asi"
 
    filter "configurations:Debug"
