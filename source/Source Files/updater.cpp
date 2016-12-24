@@ -283,7 +283,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 			}
 			else
 			{
-				std::wcout << L"Seems like this archive doesn't contain " << strFileName.substr(0, strFileName.find_last_of(L".")) << strExtension << std::endl;
+				std::wcout << L"Seems like this archive doesn't contain " << strFileName.substr(0, strFileName.find_last_of(L".")) << L"." << strExtension << std::endl;
 			}
 		}
 	}
@@ -313,7 +313,7 @@ void UpdateFile(std::wstring wzsFileName, std::wstring wszFullFilePath, std::wst
 
 		auto itr = std::find_if(entries.begin(), entries.end(), [&wzsFileName, &szFilePath, &szFileName](auto &s)
 		{
-			auto s1 = s.name.substr(0, s.name.find_first_of('/') + 1);
+			auto s1 = s.name.substr(0, s.name.rfind('/') + 1);
 			auto s2 = s.name.substr(s.name.rfind('/') + 1);
 		
 			if (s2.size() != wzsFileName.size())
@@ -350,6 +350,9 @@ void UpdateFile(std::wstring wzsFileName, std::wstring wszFullFilePath, std::wst
 				{
 					if ((!bCheckboxChecked && lowcsIt.find(lowcsFileName) != std::string::npos) || (bCheckboxChecked && lowcsIt.find(lowcsFilePath) != std::string::npos))
 					{
+						if (wszFullFilePath.find(L"modloader\\modloader.asi") != std::string::npos && itFileName.find(L"modloader\\") != std::string::npos)
+							itFileName.erase(0, std::wstring(L"modloader\\").length());
+
 						std::wstring fullPath = wszFullFilePath.substr(0, wszFullFilePath.find_last_of('\\') + 1) + itFileName;
 						std::string fullPathStr; std::copy(fullPath.begin(), fullPath.end(), std::back_inserter(fullPathStr));
 						if (CheckForFileLock(fullPath.c_str()) == FALSE)
