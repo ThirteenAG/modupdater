@@ -15,6 +15,9 @@ CIniReader iniReader;
 std::vector<FileUpdateInfo> FilesToUpdate;
 std::wstring modulePath, processPath, ualPath;
 std::wstring messagesBuffer;
+std::wstring wszUAL(L"Ultimate-ASI-Loader.zip");
+std::wofstream logFile;
+std::wstreambuf* outbuf;
 HWND MainHwnd, DialogHwnd;
 #define BUTTONID1 1001
 #define BUTTONID2 1002
@@ -104,6 +107,12 @@ void FindFilesRecursively(const std::wstring &directory, std::function<void(std:
 
 void CleanupLockedFiles()
 {
+	if (!ualPath.empty())
+	{
+		auto ualdel = ualPath + L".deleteonnextlaunch";
+		DeleteFileW(ualdel.c_str());
+	}
+
 	auto cb = [](std::wstring &s, WIN32_FIND_DATAW)
 	{
 		static std::wstring const targetExtension(L".deleteonnextlaunch");
@@ -155,6 +164,41 @@ size_t find_nth(const std::string& haystack, size_t pos, const std::string& need
 	size_t found_pos = haystack.find(needle, pos);
 	if (0 == nth || std::string::npos == found_pos)  return found_pos;
 	return find_nth(haystack, found_pos + 1, needle, nth - 1);
+}
+
+std::tuple<int32_t, std::string, std::string, std::string> GetUALInfo()
+{
+	std::string szUrl = "https://api.github.com/repos/ThirteenAG/Ultimate-ASI-Loader/releases/latest" "?access_token=" GHTOKEN "&per_page=100";
+
+	std::cout << "Connecting to GitHub..." << std::endl;
+	auto r = cpr::Get(cpr::Url{ szUrl });
+
+	if (r.status_code == 200)
+	{
+		Json::Value parsedFromString;
+		Json::Reader reader;
+		bool parsingSuccessful = reader.parse(r.text, parsedFromString);
+
+		if (parsingSuccessful)
+		{
+			std::cout << "GitHub's response parsed successfully." << std::endl;
+
+			std::string name(parsedFromString["assets"][0]["name"].asString());
+
+			std::cout << "Found " << parsedFromString["assets"][0]["name"] << "on github" << std::endl;
+			auto szDownloadURL = parsedFromString["assets"][0]["browser_download_url"].asString();
+			auto szDownloadName = parsedFromString["assets"][0]["name"].asString();
+			auto szFileSize = parsedFromString["assets"][0]["size"].asString();
+
+			using namespace date;
+			int32_t y, m, d; // "updated_at": "2016-08-16T11:42:53Z"
+			sscanf_s(parsedFromString["assets"][0]["updated_at"].asCString(), "%d-%d-%d%*s", &y, &m, &d);
+			auto nRemoteFileUpdateTime = date::year(y) / date::month(m) / date::day(d);
+			auto now = floor<days>(std::chrono::system_clock::now());
+			return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+		}
+	}
+	return std::make_tuple(-1, "", "", "");
 }
 
 std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std::wstring strFileName, std::wstring strExtension)
@@ -314,6 +358,13 @@ void UpdateFile(std::wstring wzsFileName, std::wstring wszFullFilePath, std::wst
 		std::vector<ZipEntry> entries = unzipper.entries();
 		std::wstring szFilePath, szFileName;
 
+		bool bIsUAL = false;
+		if (wzsFileName == wszUAL)
+		{
+			wzsFileName = L"dinput8.dll";
+			bIsUAL = true;
+		}
+
 		auto itr = std::find_if(entries.begin(), entries.end(), [&wzsFileName, &szFilePath, &szFileName](auto &s)
 		{
 			auto s1 = s.name.substr(0, s.name.rfind('/') + 1);
@@ -357,6 +408,10 @@ void UpdateFile(std::wstring wzsFileName, std::wstring wszFullFilePath, std::wst
 							itFileName.erase(0, std::wstring(L"modloader\\").length());
 
 						std::wstring fullPath = wszFullFilePath.substr(0, wszFullFilePath.find_last_of('\\') + 1) + itFileName;
+
+						if (bIsUAL)
+							fullPath = ualPath;
+
 						std::string fullPathStr; std::copy(fullPath.begin(), fullPath.end(), std::back_inserter(fullPathStr));
 						if (CheckForFileLock(fullPath.c_str()) == FALSE)
 						{
@@ -377,6 +432,9 @@ void UpdateFile(std::wstring wzsFileName, std::wstring wszFullFilePath, std::wst
 
 						messagesBuffer = itFileName + L" was updated succesfully.";
 						std::wcout << messagesBuffer << std::endl;
+
+						if (bIsUAL)
+							break;
 					}
 				}
 			}
@@ -588,11 +646,12 @@ DWORD WINAPI ProcessFiles(LPVOID)
 
 	if (iniReader.ReadInteger("MISC", "OutputLogToFile", 0) != 0)
 	{
-		std::ofstream out(modulePath + L"modupdater");
-		std::cout.rdbuf(out.rdbuf());
+		logFile.open(modulePath + L"modupdater.log");
+		outbuf = std::wcout.rdbuf(logFile.rdbuf());
 		std::wcout << "Current directory: " << modulePath << std::endl;
 	}
 
+	bool bUpdateUAL = iniReader.ReadInteger("MISC", "UpdateUAL", 1) != 0;
 	bool bAlwaysUpdate = iniReader.ReadInteger("DEBUG", "AlwaysUpdate", 0) != 0;
 	std::string nameStr = std::string(iniReader.ReadString("FILE", "NameRegExp", ".*\\.WidescreenFix"));
 	std::string extStr = std::string(iniReader.ReadString("FILE", "Extension", "asi"));
@@ -603,19 +662,22 @@ DWORD WINAPI ProcessFiles(LPVOID)
 	std::wstring name_ext(name + L"." + ext);
 	std::wregex wregex(name_ext, std::regex::icase);
 
-	auto cb = [&name, &ext, &wregex, &bAlwaysUpdate](std::wstring &s, WIN32_FIND_DATAW &fd)
+	auto cb = [&name, &ext, &wregex, &bAlwaysUpdate](std::wstring &s, WIN32_FIND_DATAW &fd, bool bIsUAL = false)
 	{
 		static std::wstring const targetExtension(L"." + ext);
-		if (s.size() >= targetExtension.size() && std::equal(s.end() - targetExtension.size(), s.end(), targetExtension.begin()))
+		if ((s.size() >= targetExtension.size() && std::equal(s.end() - targetExtension.size(), s.end(), targetExtension.begin())) || bIsUAL)
 		{
 			auto strFileName = s.substr(s.rfind('\\') + 1);
+			if (bIsUAL)
+				strFileName = wszUAL;
+
 			auto nameCheck = strFileName.substr(0, s.rfind('.'));
 
-			if (std::regex_match(strFileName, wregex))
+			if (std::regex_match(strFileName, wregex) || bIsUAL)
 			{
 				std::wcout << strFileName << " " << "found." << std::endl;
 				int32_t nLocaFileUpdatedDaysAgo = GetLocalFileInfo(fd.ftCreationTime, fd.ftLastAccessTime, fd.ftLastWriteTime);
-				auto RemoteInfo = GetRemoteFileInfo(strFileName, ext);
+				auto RemoteInfo = bIsUAL ? GetUALInfo() : GetRemoteFileInfo(strFileName, ext);
 				auto nRemoteFileUpdatedDaysAgo = std::get<0>(RemoteInfo);
 				auto szDownloadURL = std::get<1>(RemoteInfo);
 				auto szDownloadName = std::get<2>(RemoteInfo);
@@ -657,6 +719,15 @@ DWORD WINAPI ProcessFiles(LPVOID)
 		}
 	};
 
+	if (bUpdateUAL && !ualPath.empty())
+	{
+		WIN32_FIND_DATAW ualFD;
+		if (FindFirstFileW(ualPath.c_str(), &ualFD) != INVALID_HANDLE_VALUE)
+		{
+			cb(ualPath, ualFD, true);
+		}
+	}
+
 	std::wstring modulePathWS; std::copy(modulePath.begin(), modulePath.end(), std::back_inserter(modulePathWS));
 	FindFilesRecursively(modulePathWS, cb);
 
@@ -665,6 +736,7 @@ DWORD WINAPI ProcessFiles(LPVOID)
 	else
 		std::wcout << L"No files found to process." << std::endl;
 
+	std::wcout.rdbuf(outbuf);
 	return 0;
 }
 
