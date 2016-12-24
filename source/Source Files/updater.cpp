@@ -13,7 +13,7 @@ struct FileUpdateInfo
 
 CIniReader iniReader;
 std::vector<FileUpdateInfo> FilesToUpdate;
-std::wstring modulePath, processPath;
+std::wstring modulePath, processPath, ualPath;
 std::wstring messagesBuffer;
 HWND MainHwnd, DialogHwnd;
 #define BUTTONID1 1001
@@ -21,6 +21,7 @@ HWND MainHwnd, DialogHwnd;
 #define BUTTONID3 1003
 #define BUTTONID4 1004
 #define BUTTONID5 1005
+#define GHTOKEN "63c1f1cc5782c8f1dafad05448e308f0cf8c9198"
 
 BOOL CheckForFileLock(LPCWSTR pFilePath, bool bReleaseLock = false)
 {
@@ -177,10 +178,12 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 				break;
 		}
 
-		std::string szUrl = std::string(iniReader.ReadString("API", (char*)&strURL[0], (iniCount == 0) ? "https://api.github.com/repos/ThirteenAG/WidescreenFixesPack/releases?access_token=63c1f1cc5782c8f1dafad05448e308f0cf8c9198&per_page=100" : ""));
+		std::string szUrl = std::string(iniReader.ReadString("API", (char*)&strURL[0], (iniCount == 0) ? "https://api.github.com/repos/ThirteenAG/WidescreenFixesPack/releases" : ""));
 
 		if (szUrl.find("api.github.com") != std::string::npos)
 		{
+			szUrl += "?access_token=" GHTOKEN "&per_page=100";
+
 			std::cout << "Connecting to GitHub..." << std::endl;
 			auto r = cpr::Get(cpr::Url{ szUrl });
 
@@ -693,6 +696,24 @@ void Init()
 
 	if (iniReader.ReadInteger("MISC", "ScanFromRootFolder", 0) != 0)
 		modulePath = processPath.substr(0, processPath.rfind('\\') + 1);
+
+	if (iniReader.ReadInteger("MISC", "UpdateUAL", 1) != 0)
+	{
+		wchar_t* ualNames[] = { L"d3d8.dll", L"d3d9.dll", L"d3d11.dll", L"winmmbase.dll", L"dinput8.dll", L"dsound.dll", L"ddraw.dll", L"vorbisFile.dll", L"xlive.dll" };
+		hm = NULL;
+
+		for (auto &it : ualNames)
+		{
+			if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)GetProcAddress(GetModuleHandleW(it), "DllCanUnloadNow_dsound"), &hm))
+				std::wcout << L"GetModuleHandle returned " << GetLastError() << std::endl;
+			else
+			{
+				GetModuleFileNameW(hm, buffer, sizeof(buffer));
+				ualPath = buffer;
+				break;
+			}
+		}
+	}
 
 	CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&ProcessFiles, 0, 0, NULL);
 
