@@ -158,7 +158,9 @@ size_t find_nth(const std::string& haystack, size_t pos, const std::string& need
 
 std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std::wstring strFileName, std::wstring strExtension)
 {
-	strFileName.erase(strFileName.find_last_of('.'));
+	auto pos = strFileName.find_last_of('.');
+	if (pos != std::string::npos)
+		strFileName.erase(pos);
 	strFileName.append(L".zip");
 
 	for (size_t iniCount = 0;; iniCount++)
@@ -281,7 +283,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 			}
 			else
 			{
-				std::wcout << L"Seems like this archive doesn't contain " << strFileName.substr(0, strFileName.find_last_of(L".")) << std::endl;
+				std::wcout << L"Seems like this archive doesn't contain " << strFileName.substr(0, strFileName.find_last_of(L".")) << strExtension << std::endl;
 			}
 		}
 	}
@@ -319,14 +321,14 @@ void UpdateFile(std::wstring wzsFileName, std::wstring wszFullFilePath, std::wst
 
 			for (size_t i = 0; i < s2.size(); ++i)
 			{
-				if (::tolower(s2[i]) == ::tolower(wzsFileName[i]))
+				if (!(::tolower(s2[i]) == ::tolower(wzsFileName[i])))
 				{
-					std::copy(s1.begin(), s1.end(), std::back_inserter(szFilePath));
-					std::copy(s2.begin(), s2.end(), std::back_inserter(szFileName));
-					return true;
+					return false;
 				}
 			}
-			return false;
+			std::copy(s1.begin(), s1.end(), std::back_inserter(szFilePath));
+			std::copy(s2.begin(), s2.end(), std::back_inserter(szFileName));
+			return true;
 		});
 
 		if (itr != entries.end())
