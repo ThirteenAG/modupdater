@@ -483,6 +483,18 @@ void ShowUpdateDialog()
 		return FALSE;
 	};
 
+	auto EnumWindowsProc = [](HWND hwnd, LPARAM lParam)->BOOL
+	{
+		DWORD lpdwProcessId;
+		GetWindowThreadProcessId(hwnd, &lpdwProcessId);
+		if (lpdwProcessId == lParam)
+		{
+			MainHwnd = hwnd;
+			return FALSE;
+		}
+		return TRUE;
+	};
+
 	auto formatBytes = [](int32_t bytes, int32_t precision = 2)->std::string
 	{
 		if (bytes == 0)
@@ -606,6 +618,7 @@ void ShowUpdateDialog()
 
 				if (nClickedBtnID == BUTTONID4)
 				{
+					auto workingDir = processPath.substr(0, processPath.find_last_of('\\'));
 					SHELLEXECUTEINFOW ShExecInfo = { 0 };
 					ShExecInfo.cbSize = sizeof(SHELLEXECUTEINFOW);
 					ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
@@ -613,7 +626,7 @@ void ShowUpdateDialog()
 					ShExecInfo.lpVerb = NULL;
 					ShExecInfo.lpFile = processPath.c_str();
 					ShExecInfo.lpParameters = L"";
-					ShExecInfo.lpDirectory = NULL;
+					ShExecInfo.lpDirectory = workingDir.c_str();
 					ShExecInfo.nShow = SW_SHOWNORMAL;
 					ShExecInfo.hInstApp = NULL;
 					ShellExecuteExW(&ShExecInfo);
@@ -624,6 +637,9 @@ void ShowUpdateDialog()
 				{
 					if (nClickedBtnID == BUTTONID5)
 					{
+						if (MainHwnd == NULL)
+							EnumWindows(EnumWindowsProc, GetCurrentProcessId());
+
 						SwitchToThisWindow(MainHwnd, TRUE);
 					}
 				}
@@ -631,12 +647,20 @@ void ShowUpdateDialog()
 			else
 			{
 				std::wcout << L"Update cancelled or error occured." << std::endl;
+				if (MainHwnd == NULL)
+					EnumWindows(EnumWindowsProc, GetCurrentProcessId());
+
+				SwitchToThisWindow(MainHwnd, TRUE);
 			}
 		}
 	}
 	else
 	{
 		std::wcout << L"Update cancelled." << std::endl;
+		if (MainHwnd == NULL)
+			EnumWindows(EnumWindowsProc, GetCurrentProcessId());
+
+		SwitchToThisWindow(MainHwnd, TRUE);
 	}
 }
 
@@ -742,19 +766,6 @@ DWORD WINAPI ProcessFiles(LPVOID)
 
 void Init()
 {
-	auto EnumWindowsProc = [](HWND hwnd, LPARAM lParam)->BOOL
-	{
-		DWORD lpdwProcessId;
-		GetWindowThreadProcessId(hwnd, &lpdwProcessId);
-		if (lpdwProcessId == lParam)
-		{
-			MainHwnd = hwnd;
-			return FALSE;
-		}
-		return TRUE;
-	};
-	EnumWindows(EnumWindowsProc, GetCurrentProcessId());
-
 	wchar_t buffer[MAX_PATH];
 	HMODULE hm = NULL;
 	if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&Init, &hm))
