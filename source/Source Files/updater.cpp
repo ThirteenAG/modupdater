@@ -288,7 +288,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 	return std::make_tuple(-1, "", "", "");
 }
 
-void UpdateFile(std::wstring wzsFileName, std::wstring wszDownloadURL, std::wstring wszDownloadName, bool bCheckboxChecked)
+void UpdateFile(std::wstring wzsFileName, std::wstring wszFullFilePath, std::wstring wszDownloadURL, std::wstring wszDownloadName, bool bCheckboxChecked)
 {
 	messagesBuffer = L"Downloading " + wszDownloadName;
 	std::wcout << messagesBuffer << std::endl;
@@ -311,7 +311,7 @@ void UpdateFile(std::wstring wzsFileName, std::wstring wszDownloadURL, std::wstr
 
 		auto itr = std::find_if(entries.begin(), entries.end(), [&wzsFileName, &szFilePath, &szFileName](auto &s)
 		{
-			auto s1 = s.name.substr(0, s.name.rfind('/') + 1);
+			auto s1 = s.name.substr(0, s.name.find_first_of('/') + 1);
 			auto s2 = s.name.substr(s.name.rfind('/') + 1);
 		
 			if (s2.size() != wzsFileName.size())
@@ -341,13 +341,14 @@ void UpdateFile(std::wstring wzsFileName, std::wstring wszDownloadURL, std::wstr
 				std::transform(szFilePath.begin(), szFilePath.end(), std::back_inserter(lowcsFilePath), ::tolower);
 				std::transform(szFileName.begin(), szFileName.end(), std::back_inserter(lowcsFileName), ::tolower);
 				std::copy(it->name.begin(), it->name.end(), std::back_inserter(itFileName));
+				std::replace(itFileName.begin(), itFileName.end(), '/', '\\');
 				itFileName.erase(0, szFilePath.length());
 		
-				if (!itFileName.empty() && (itFileName.back() != L'/'))
+				if (!itFileName.empty() && (itFileName.back() != L'\\'))
 				{
 					if ((!bCheckboxChecked && lowcsIt.find(lowcsFileName) != std::string::npos) || (bCheckboxChecked && lowcsIt.find(lowcsFilePath) != std::string::npos))
 					{
-						std::wstring fullPath = modulePath + itFileName;
+						std::wstring fullPath = wszFullFilePath.substr(0, wszFullFilePath.find_last_of('\\') + 1) + itFileName;
 						std::string fullPathStr; std::copy(fullPath.begin(), fullPath.end(), std::back_inserter(fullPathStr));
 						if (CheckForFileLock(fullPath.c_str()) == FALSE)
 						{
@@ -437,7 +438,7 @@ void ShowUpdateDialog()
 	};
 
 	TASKDIALOGCONFIG tdc = { sizeof(TASKDIALOGCONFIG) };
-	auto szTitle = L"WFP.Updater";
+	auto szTitle = L"modupdater";
 	auto szCheckboxText = L"Update all downloaded files.";
 	auto szHeader = std::wstring(L"Updates available:\n");
 	std::wstring szBodyText;
@@ -505,7 +506,7 @@ void ShowUpdateDialog()
 		{
 			for (auto &it : FilesToUpdate)
 			{
-				UpdateFile(it.wszFileName, it.wszDownloadURL, it.wszDownloadName, bCheckboxChecked != 0);
+				UpdateFile(it.wszFileName, it.wszFullFilePath, it.wszDownloadURL, it.wszDownloadName, bCheckboxChecked != 0);
 			}
 			SendMessage(DialogHwnd, TDM_CLICK_BUTTON, static_cast<WPARAM>(TDCBF_OK_BUTTON), 0);
 			bNotCanceledorError = true;
@@ -579,7 +580,7 @@ DWORD WINAPI ProcessFiles(LPVOID)
 
 	if (iniReader.ReadInteger("MISC", "OutputLogToFile", 0) != 0)
 	{
-		std::ofstream out(modulePath + L"WFP.Updater.log");
+		std::ofstream out(modulePath + L"modupdater");
 		std::cout.rdbuf(out.rdbuf());
 		std::wcout << "Current directory: " << modulePath << std::endl;
 	}
@@ -636,7 +637,7 @@ DWORD WINAPI ProcessFiles(LPVOID)
 					else
 					{
 						std::wcout << L"No updates available." << std::endl;
-						//MessageBox(NULL, "No updates available.", "WFP.Updater", MB_OK | MB_ICONINFORMATION);
+						//MessageBox(NULL, "No updates available.", "modupdater", MB_OK | MB_ICONINFORMATION);
 					}
 				}
 				//else
@@ -684,6 +685,9 @@ void Init()
 	processPath = std::wstring(buffer);
 
 	iniReader.SetIniPath();
+
+	if (iniReader.ReadInteger("MISC", "ScanFromRootFolder", 0) != 0)
+		modulePath = processPath.substr(0, processPath.rfind('\\') + 1);
 
 	CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&ProcessFiles, 0, 0, NULL);
 
