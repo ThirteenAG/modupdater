@@ -38,7 +38,7 @@ Put **modupdater.asi** and/or **modupdater.exe** in the folder with files you wa
 
 By default updater can work without ini file, it's preconfigured to only update plugins from [Widescreen Fixes Pack](https://thirteenag.github.io/wfp). However, if you want to update something else, you need to create an ini file with the same name. For example: **modupdater.asi** / **modupdater.ini**.
 
-> See ini example [here](https://github.com/ThirteenAG/modupdater/blob/master/source/Ini%20Example/modupdater.ini) or below.
+> See ini example [here](https://github.com/ThirteenAG/modupdater/blob/master/source/Ini%20Example/) or below.
 
 Here's a list of options you can set:
 
