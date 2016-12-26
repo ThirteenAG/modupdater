@@ -24,7 +24,7 @@ modupdater
 
 ###  Known Issues
 
-At first launch updater can offer to update already latest version of the mod. It can happen because updater doesn't use any versioning information, but instead relies on date difference between local file and remote archive. Just update everything once and this problem shouldn't appear anymore.
+On first launch the updater may offer "update" to already up-to-date version of a mod. This happens because updater doesn't use any versioning information, but instead relies on date difference between local file and remote archive. Just update everything once and this problem shouldn't appear anymore.
 
 -------------------------------
 
@@ -76,9 +76,9 @@ Here's a list of options you can set:
 >**Url1**. Contains an additional source path. You can also specify **Url2**, **Url3**, **Url4** and so on.
 
 >**[MISC]**
-**ScanFromRootFolder**. You can place **modupdater.asi** in any folder, like scripts, modloader's subfolder etc. With this option set to **1**, updater will start searching for files from the folder where the game's exe located. *This will not work if you run **modupdater.exe***.
+**ScanFromRootFolder**. You can place **modupdater.asi** in any folder, like scripts, modloader's subfolder etc. With this option set to **1**, updater will start searching for files from the folder where the game's exe located. *This will not work if you run **modupdater.exe**.
 
->**UpdateUAL**. If you have Universal Asi Loader, it will be updated as well. *This will not work if you run **modupdater.exe***.
+>**UpdateUAL**. If you have Universal Asi Loader, it will be updated as well. *This will not work if you run **modupdater.exe**.
 
 >**SkipUpdateCompleteDialog**. Skips this dialog window(but doesn't do restart):
 ![](http://i.imgur.com/mM30zCH.png)
