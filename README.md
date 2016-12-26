@@ -76,9 +76,9 @@ Here's a list of options you can set:
 >**Url1**. Contains an additional source path. You can also specify **Url2**, **Url3**, **Url4** and so on.
 
 >**[MISC]**
-**ScanFromRootFolder**. You can place **modupdater.asi** in any folder, like scripts, modloader's subfolder etc. With this option set to **1**, updater will start searching for files from the folder where the game's exe located. *This will not work if you run **modupdater.exe**.
+**ScanFromRootFolder**. You can place **modupdater.asi** in any folder, like scripts, modloader's subfolder etc. With this option set to **1**, updater will start searching for files from the folder where the game's exe located. This will not work if you run **modupdater.exe**.
 
->**UpdateUAL**. If you have Universal Asi Loader, it will be updated as well. *This will not work if you run **modupdater.exe**.
+>**UpdateUAL**. If you have Universal Asi Loader, it will be updated as well. This will not work if you run **modupdater.exe**.
 
 >**SkipUpdateCompleteDialog**. Skips this dialog window(but doesn't do restart):
 ![](http://i.imgur.com/mM30zCH.png)
