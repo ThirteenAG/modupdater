@@ -23,6 +23,8 @@ modupdater
 
 On first launch the updater may offer "update" to already up-to-date version of a mod. This happens because updater doesn't use any versioning information, but instead relies on date difference between local file and remote archive. Just update everything once and this problem shouldn't appear anymore.
 
+Currently **modupdater.asi** doesn't update itself, unless you add this repository to sources. I will fix it in v1.1.
+
 -------------------------------
 
 ###  Installation
