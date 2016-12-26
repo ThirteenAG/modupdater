@@ -1,4 +1,4 @@
-[modupdater](#readme)
+modupdater
 ===================
 
 [GIFV DEMO](http://i.imgur.com/aKDwZv8.gifv)
