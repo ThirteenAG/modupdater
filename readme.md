@@ -55,6 +55,7 @@ Here's a list of options you can set:
     [MISC]
     ScanFromRootFolder       <-- 1 or 0
     UpdateUAL                <-- 1 or 0
+    SelfUpdate               <-- 1 or 0
     SkipUpdateCompleteDialog <-- 1 or 0
     OutputLogToFile          <-- 1 or 0
     
@@ -78,6 +79,8 @@ Here's a list of options you can set:
 **ScanFromRootFolder**. You can place **modupdater.asi** in any folder, like scripts, modloader's subfolder etc. With this option set to **1**, updater will start searching for files from the folder where the game's exe located. This will not work if you run **modupdater.exe**.
 
 >**UpdateUAL**. If you have Universal Asi Loader, it will be updated as well. This will not work if you run **modupdater.exe**.
+
+>**SelfUpdate**. Updater will update itself.
 
 >**SkipUpdateCompleteDialog**. Skips this dialog window(but doesn't do restart):
 ![](http://i.imgur.com/mM30zCH.png)
