@@ -13,12 +13,15 @@ struct FileUpdateInfo
 
 CIniReader iniReader;
 std::vector<FileUpdateInfo> FilesToUpdate;
-std::wstring modulePath, processPath, ualPath;
+std::wstring modulePath, processPath, ualPath, selfPath;
 std::wstring messagesBuffer;
-std::wstring wszUAL(L"Ultimate-ASI-Loader.zip");
+const std::wstring wszUAL(L"Ultimate-ASI-Loader.zip");
+const std::string skygfx("skygfx");
 std::wofstream logFile;
 std::wstreambuf* outbuf;
 HWND MainHwnd, DialogHwnd;
+#define _UAL 1
+#define _SELF 2
 #define BUTTONID1 1001
 #define BUTTONID2 1002
 #define BUTTONID3 1003
@@ -166,9 +169,13 @@ size_t find_nth(const std::string& haystack, size_t pos, const std::string& need
 	return find_nth(haystack, found_pos + 1, needle, nth - 1);
 }
 
-std::tuple<int32_t, std::string, std::string, std::string> GetUALInfo()
+std::tuple<int32_t, std::string, std::string, std::string> GetUALInfo(int32_t nIsUALorSelf)
 {
-	std::string szUrl = "https://api.github.com/repos/ThirteenAG/Ultimate-ASI-Loader/releases/latest" "?access_token=" GHTOKEN "&per_page=100";
+	std::string szUrl;
+	if (nIsUALorSelf == _SELF)
+		szUrl = "https://api.github.com/repos/ThirteenAG/modupdater/releases/latest" "?access_token=" GHTOKEN "&per_page=100";
+	else
+		szUrl = "https://api.github.com/repos/ThirteenAG/Ultimate-ASI-Loader/releases/latest" "?access_token=" GHTOKEN "&per_page=100";
 
 	std::cout << "Connecting to GitHub..." << std::endl;
 	auto r = cpr::Get(cpr::Url{ szUrl });
@@ -223,114 +230,119 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 		}
 
 		std::string szUrl = std::string(iniReader.ReadString("API", (char*)&strURL[0], (iniCount == 0) ? "https://api.github.com/repos/ThirteenAG/WidescreenFixesPack/releases" : ""));
+		std::wstring wszUrl; std::copy(szUrl.begin(), szUrl.end(), std::back_inserter(wszUrl));
+		auto lcs = GetLongestCommonSubstring(wszUrl, strFileName);
 
-		if (szUrl.find("api.github.com") != std::string::npos)
+		if (lcs.length() >= skygfx.length())
 		{
-			szUrl += "?access_token=" GHTOKEN "&per_page=100";
-
-			std::cout << "Connecting to GitHub..." << std::endl;
-			auto r = cpr::Get(cpr::Url{ szUrl });
-
-			if (r.status_code == 200)
+			if (szUrl.find("api.github.com") != std::string::npos)
 			{
-				Json::Value parsedFromString;
-				Json::Reader reader;
-				bool parsingSuccessful = reader.parse(r.text, parsedFromString);
+				szUrl += "?access_token=" GHTOKEN "&per_page=100";
 
-				if (parsingSuccessful)
+				std::cout << "Connecting to GitHub..." << std::endl;
+				auto r = cpr::Get(cpr::Url{ szUrl });
+
+				if (r.status_code == 200)
 				{
-					std::cout << "GitHub's response parsed successfully." << std::endl;
+					Json::Value parsedFromString;
+					Json::Reader reader;
+					bool parsingSuccessful = reader.parse(r.text, parsedFromString);
 
-					for (Json::ValueConstIterator it = parsedFromString.begin(); it != parsedFromString.end(); ++it)
+					if (parsingSuccessful)
 					{
-						const Json::Value& wsFix = *it;
+						std::cout << "GitHub's response parsed successfully." << std::endl;
 
-						for (size_t i = 0; i < wsFix["assets"].size(); i++)
+						for (Json::ValueConstIterator it = parsedFromString.begin(); it != parsedFromString.end(); ++it)
 						{
-							std::string str1, str2;
-							std::string name(wsFix["assets"][i]["name"].asString());
+							const Json::Value& wsFix = *it;
 
-							std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
-							std::transform(name.begin(), name.end(), std::back_inserter(str2), ::tolower);
-
-							if (str1 == str2)
+							for (size_t i = 0; i < wsFix["assets"].size(); i++)
 							{
-								std::cout << "Found " << wsFix["assets"][i]["name"] << "on github" << std::endl;
-								auto szDownloadURL = wsFix["assets"][i]["browser_download_url"].asString();
-								auto szDownloadName = wsFix["assets"][i]["name"].asString();
-								auto szFileSize = wsFix["assets"][i]["size"].asString();
+								std::string str1, str2;
+								std::string name(wsFix["assets"][i]["name"].asString());
 
-								using namespace date;
-								int32_t y, m, d; // "updated_at": "2016-08-16T11:42:53Z"
-								sscanf_s(wsFix["assets"][i]["updated_at"].asCString(), "%d-%d-%d%*s", &y, &m, &d);
-								auto nRemoteFileUpdateTime = date::year(y) / date::month(m) / date::day(d);
-								auto now = floor<days>(std::chrono::system_clock::now());
-								return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+								std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
+								std::transform(name.begin(), name.end(), std::back_inserter(str2), ::tolower);
+
+								if (str1 == str2)
+								{
+									std::cout << "Found " << wsFix["assets"][i]["name"] << "on github" << std::endl;
+									auto szDownloadURL = wsFix["assets"][i]["browser_download_url"].asString();
+									auto szDownloadName = wsFix["assets"][i]["name"].asString();
+									auto szFileSize = wsFix["assets"][i]["size"].asString();
+
+									using namespace date;
+									int32_t y, m, d; // "updated_at": "2016-08-16T11:42:53Z"
+									sscanf_s(wsFix["assets"][i]["updated_at"].asCString(), "%d-%d-%d%*s", &y, &m, &d);
+									auto nRemoteFileUpdateTime = date::year(y) / date::month(m) / date::day(d);
+									auto now = floor<days>(std::chrono::system_clock::now());
+									return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+								}
 							}
 						}
+						std::cout << "Nothing is found on GitHub." << std::endl;
 					}
-					std::cout << "Nothing is found on GitHub." << std::endl;
-				}
-			}
-			else
-			{
-				std::cout << "Something wrong! " << "Status code: " << r.status_code << std::endl;
-			}
-		}
-		else
-		{
-			if (szUrl.find("node-js-geturl") != std::string::npos)
-			{
-				auto r = cpr::Get(cpr::Url{ szUrl });
-				
-				if (r.text.empty())
-					continue;
-
-				if (r.text.at(0) == '.' || r.text.at(0) == '/')
-				{
-					auto sstr1 = std::string("?url=(");
-					auto sstr2 = szUrl.rfind(sstr1) + sstr1.length();
-					szUrl = szUrl.substr(sstr2);
-					szUrl = szUrl.substr(0, find_nth(szUrl, 0, std::string("/"), 2));
-					szUrl += r.text.substr(r.text.find_first_of('/'));
 				}
 				else
-					szUrl = r.text;
-			}
-
-			std::cout << "Connecting to " << szUrl << std::endl;
-
-			auto rHead = cpr::Head(cpr::Url{ szUrl });
-
-			std::cout << "Found " << rHead.header["Content-Type"] << std::endl;
-			std::string szDownloadURL = rHead.url.c_str();
-			std::string tempStr = szDownloadURL.substr(szDownloadURL.find_last_of('/') + 1);
-			auto endPos = tempStr.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890_.");
-			std::string szDownloadName = tempStr.substr(0, (endPos == 0) ? std::string::npos : endPos);
-			std::string szFileSize = rHead.header["Content-Length"];
-
-			std::wstring str1, str2;
-			std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
-			std::transform(szDownloadName.begin(), szDownloadName.end(), std::back_inserter(str2), ::tolower);
-			str1 = str1.substr(0, str1.find_last_of(L"."));
-			str2 = str2.substr(0, str2.find_last_of(L"."));
-
-			auto lcs = GetLongestCommonSubstring(str1, str2);
-
-			if (lcs.length() >= std::string("skygfx").length())
-			{
-				std::tm t;
-				std::istringstream ss(rHead.header["Last-Modified"]); // Wed, 27 Jul 2016 18:43:42 GMT
-				ss >> std::get_time(&t, "%a, %d %b %Y %H:%M:%S %Z");
-
-				using namespace date;
-				auto nRemoteFileUpdateTime = date::year(t.tm_year + 1900) / date::month(t.tm_mon + 1) / date::day(t.tm_mday);
-				auto now = floor<days>(std::chrono::system_clock::now());
-				return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+				{
+					std::cout << "Something wrong! " << "Status code: " << r.status_code << std::endl;
+				}
 			}
 			else
 			{
-				std::wcout << L"Seems like this archive doesn't contain " << strFileName.substr(0, strFileName.find_last_of(L".")) << L"." << strExtension << std::endl;
+				if (szUrl.find("node-js-geturl") != std::string::npos)
+				{
+					auto r = cpr::Get(cpr::Url{ szUrl });
+
+					if (r.text.empty())
+						continue;
+
+					if (r.text.at(0) == '.' || r.text.at(0) == '/')
+					{
+						auto sstr1 = std::string("?url=(");
+						auto sstr2 = szUrl.rfind(sstr1) + sstr1.length();
+						szUrl = szUrl.substr(sstr2);
+						szUrl = szUrl.substr(0, find_nth(szUrl, 0, std::string("/"), 2));
+						szUrl += r.text.substr(r.text.find_first_of('/'));
+					}
+					else
+						szUrl = r.text;
+				}
+
+				std::cout << "Connecting to " << szUrl << std::endl;
+
+				auto rHead = cpr::Head(cpr::Url{ szUrl });
+
+				std::cout << "Found " << rHead.header["Content-Type"] << std::endl;
+				std::string szDownloadURL = rHead.url.c_str();
+				std::string tempStr = szDownloadURL.substr(szDownloadURL.find_last_of('/') + 1);
+				auto endPos = tempStr.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890_.");
+				std::string szDownloadName = tempStr.substr(0, (endPos == 0) ? std::string::npos : endPos);
+				std::string szFileSize = rHead.header["Content-Length"];
+
+				std::wstring str1, str2;
+				std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
+				std::transform(szDownloadName.begin(), szDownloadName.end(), std::back_inserter(str2), ::tolower);
+				str1 = str1.substr(0, str1.find_last_of(L"."));
+				str2 = str2.substr(0, str2.find_last_of(L"."));
+
+				auto lcs = GetLongestCommonSubstring(str1, str2);
+
+				if (lcs.length() >= skygfx.length())
+				{
+					std::tm t;
+					std::istringstream ss(rHead.header["Last-Modified"]); // Wed, 27 Jul 2016 18:43:42 GMT
+					ss >> std::get_time(&t, "%a, %d %b %Y %H:%M:%S %Z");
+
+					using namespace date;
+					auto nRemoteFileUpdateTime = date::year(t.tm_year + 1900) / date::month(t.tm_mon + 1) / date::day(t.tm_mday);
+					auto now = floor<days>(std::chrono::system_clock::now());
+					return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+				}
+				else
+				{
+					std::wcout << L"Seems like this archive doesn't contain " << strFileName.substr(0, strFileName.find_last_of(L".")) << L"." << strExtension << std::endl;
+				}
 			}
 		}
 	}
@@ -676,6 +688,7 @@ DWORD WINAPI ProcessFiles(LPVOID)
 	}
 
 	bool bUpdateUAL = iniReader.ReadInteger("MISC", "UpdateUAL", 1) != 0;
+	bool bSelfUpdate = iniReader.ReadInteger("MISC", "SelfUpdate", 1) != 0;
 	bool bAlwaysUpdate = iniReader.ReadInteger("DEBUG", "AlwaysUpdate", 0) != 0;
 	std::string nameStr = std::string(iniReader.ReadString("FILE", "NameRegExp", ".*\\.WidescreenFix"));
 	std::string extStr = std::string(iniReader.ReadString("FILE", "Extension", "asi"));
@@ -686,22 +699,22 @@ DWORD WINAPI ProcessFiles(LPVOID)
 	std::wstring name_ext(name + L"." + ext);
 	std::wregex wregex(name_ext, std::regex::icase);
 
-	auto cb = [&name, &ext, &wregex, &bAlwaysUpdate](std::wstring &s, WIN32_FIND_DATAW &fd, bool bIsUAL = false)
+	auto cb = [&name, &ext, &wregex, &bAlwaysUpdate](std::wstring &s, WIN32_FIND_DATAW &fd, int32_t nIsUALorSelf = 0)
 	{
 		static std::wstring const targetExtension(L"." + ext);
-		if ((s.size() >= targetExtension.size() && std::equal(s.end() - targetExtension.size(), s.end(), targetExtension.begin())) || bIsUAL)
+		if ((s.size() >= targetExtension.size() && std::equal(s.end() - targetExtension.size(), s.end(), targetExtension.begin())) || nIsUALorSelf)
 		{
 			auto strFileName = s.substr(s.rfind('\\') + 1);
-			if (bIsUAL)
+			if (nIsUALorSelf == _UAL)
 				strFileName = wszUAL;
 
 			auto nameCheck = strFileName.substr(0, s.rfind('.'));
 
-			if (std::regex_match(strFileName, wregex) || bIsUAL)
+			if (std::regex_match(strFileName, wregex) || nIsUALorSelf)
 			{
 				std::wcout << strFileName << " " << "found." << std::endl;
 				int32_t nLocaFileUpdatedDaysAgo = GetLocalFileInfo(fd.ftCreationTime, fd.ftLastAccessTime, fd.ftLastWriteTime);
-				auto RemoteInfo = bIsUAL ? GetUALInfo() : GetRemoteFileInfo(strFileName, ext);
+				auto RemoteInfo = nIsUALorSelf ? GetUALInfo(nIsUALorSelf) : GetRemoteFileInfo(strFileName, ext);
 				auto nRemoteFileUpdatedDaysAgo = std::get<0>(RemoteInfo);
 				auto szDownloadURL = std::get<1>(RemoteInfo);
 				auto szDownloadName = std::get<2>(RemoteInfo);
@@ -743,12 +756,21 @@ DWORD WINAPI ProcessFiles(LPVOID)
 		}
 	};
 
+	if (bSelfUpdate && !selfPath.empty())
+	{
+		WIN32_FIND_DATAW selfFD;
+		if (FindFirstFileW(selfPath.c_str(), &selfFD) != INVALID_HANDLE_VALUE)
+		{
+			cb(selfPath, selfFD, _SELF);
+		}
+	}
+
 	if (bUpdateUAL && !ualPath.empty())
 	{
 		WIN32_FIND_DATAW ualFD;
 		if (FindFirstFileW(ualPath.c_str(), &ualFD) != INVALID_HANDLE_VALUE)
 		{
-			cb(ualPath, ualFD, true);
+			cb(ualPath, ualFD, _UAL);
 		}
 	}
 
@@ -771,6 +793,7 @@ void Init()
 	if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&Init, &hm))
 		std::wcout << L"GetModuleHandle returned " << GetLastError() << std::endl;
 	GetModuleFileNameW(hm, buffer, sizeof(buffer));
+	selfPath = buffer;
 	modulePath = std::wstring(buffer).substr(0, std::wstring(buffer).rfind('\\') + 1);
 	GetModuleFileNameW(NULL, buffer, sizeof(buffer));
 	processPath = std::wstring(buffer);
@@ -788,7 +811,7 @@ void Init()
 		for (auto &it : ualNames)
 		{
 			if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)GetProcAddress(GetModuleHandleW(it), "DllCanUnloadNow_dsound"), &hm))
-				std::wcout << L"GetModuleHandle returned " << GetLastError() << std::endl;
+				std::wcout << it << " " << L"GetModuleHandle returned " << GetLastError() << std::endl;
 			else
 			{
 				GetModuleFileNameW(hm, buffer, sizeof(buffer));
