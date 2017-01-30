@@ -1,0 +1,21 @@
+[submodule "external/cpr"]
+	path = external/cpr
+	url = https://github.com/whoshuu/cpr
+[submodule "external/curl"]
+	path = external/curl
+	url = https://github.com/curl/curl
+[submodule "external/date"]
+	path = external/date
+	url = https://github.com/HowardHinnant/date
+[submodule "external/jsoncpp"]
+	path = external/jsoncpp
+	url = https://github.com/open-source-parsers/jsoncpp
+[submodule "external/zipper"]
+	path = external/zipper
+	url = https://github.com/sebastiandev/zipper
+[submodule "external/minizip"]
+	path = external/minizip
+	url = https://github.com/sebastiandev/minizip
+[submodule "external/zlib"]
+	path = external/zlib
+	url = https://github.com/madler/zlib
