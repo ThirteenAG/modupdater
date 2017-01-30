@@ -1,1 +1,0 @@
-nmake /f Makefile.vc mode=static RTLIBCFG=static ENABLE_IDN=no VC=14
