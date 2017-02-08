@@ -13,8 +13,8 @@ workspace "modupdater"
    files { "external/zipper/zipper/*.cpp" }
    files { "external/minizip/*.cpp" }
    
-   includedirs { "source/Includes/IniReader" }
    includedirs { "source/Header Files/" }
+   includedirs { "external/inireader" }
    includedirs { "external/curl/builds/libcurl-vc14-x86-release-static-ipv6-sspi-winssl/include" }
    includedirs { "external/cpr/include" }
    includedirs { "external/date" }
@@ -26,6 +26,7 @@ workspace "modupdater"
    libdirs { "source/Includes/Libs" }
    libdirs { "external/curl/builds/libcurl-vc14-x86-release-static-ipv6-sspi-winssl/lib" }
    
+   links { "version.lib" }
    links { "zlibstat.lib" }
    links { "libZipper-static.lib" }
    links { "libcurl_a.lib" }
