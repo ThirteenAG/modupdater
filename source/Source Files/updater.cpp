@@ -769,6 +769,14 @@ DWORD WINAPI ProcessFiles(LPVOID)
 
 	FindFilesRecursively(modulePath, cb);
 
+	//UAL
+	if (!ualPath.empty())
+	{
+		WIN32_FIND_DATAW fd;
+		FindFirstFileW(ualPath.c_str(), &fd);
+		FilesUpdateData.push_back(std::make_tuple(ualPath, std::wstring(L"https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases"), fd));
+	}
+
 	for (auto& tuple : FilesUpdateData)
 	{
 		std::wstring path = std::get<0>(tuple);
@@ -793,11 +801,11 @@ DWORD WINAPI ProcessFiles(LPVOID)
 				continue;
 		}
 
-		if ((url.find(L"api.github.com") == std::string::npos) && (url.find(L"github.com") != std::string::npos))
-			string_replace(url, L"github.com", L"api.github.com/repos");
-
 		if (strFileName == ualPath.substr(ualPath.rfind('\\') + 1) || url.find(UALNAME) != std::string::npos)
 			strFileName = std::wstring(UALNAME) + L".zip";
+
+		if ((url.find(L"api.github.com") == std::string::npos) && (url.find(L"github.com") != std::string::npos))
+			string_replace(url, L"github.com", L"api.github.com/repos");
 
 		std::wcout << strFileName << " " << "found." << std::endl;
 		std::wcout << "Update URL:" << " " << url << std::endl;
