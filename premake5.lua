@@ -49,6 +49,7 @@ project "UpdaterApp"
    filter "configurations:Debug"
       defines { "DEBUG" }
       flags { "Symbols" }
+	  characterset ("MBCS")
 
    filter "configurations:Release"
       defines { "NDEBUG" }

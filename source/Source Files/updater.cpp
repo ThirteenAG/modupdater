@@ -573,10 +573,23 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 
 	auto szUrl = toString(strUrl);
 
-	if (szUrl.find("api.github.com") != std::string::npos)
+	if (szUrl.find("github.com") != std::string::npos)
 	{
-		szUrl += "?access_token=" GHTOKEN "&per_page=100";
-		std::cout << "Connecting to GitHub..." << std::endl;
+		static std::string github = "github.com";
+		static std::string repos = "/repos/";
+		auto str = szUrl;
+
+		str.erase(0, str.find(github) + (github.length() + 1));
+		if (szUrl.find(repos) != std::string::npos)
+			str.erase(0, str.find(repos) + (repos.length()));
+
+		auto user = str.substr(0, str.find_first_of('/'));
+		auto repo = str.substr(user.length() + 1);
+		repo.erase(repo.find_first_of('/'));
+
+		szUrl = "https://api.github.com" + repos + user + "/" + repo + "/releases" + "?access_token=" GHTOKEN "&per_page=100";
+
+		std::cout << "Connecting to GitHub: " << szUrl << std::endl;
 
 		auto r = cpr::Get(cpr::Url{ szUrl });
 
@@ -749,9 +762,11 @@ DWORD WINAPI ProcessFiles(LPVOID)
 			auto strIni = pair.first;
 			auto iniEntry = pair.second;
 			removeQuotesFromString(iniEntry);
-			auto lcs = GetLongestCommonSubstring(toWString(strIni), strFileName);
 
-			if (lcs.length() >= std::string(".asi").length())
+			auto lcs = GetLongestCommonSubstring(toWString(strIni), strFileName);
+			auto lcs2 = GetLongestCommonSubstring(toWString(iniEntry), strFileName);
+
+			if ((lcs.length() > std::string(".asi").length()) || (lcs2.length() >= std::string("skygfx").length()))
 			{
 				if (ends_with(toString(strFileName).c_str(), toString(lcs).c_str(), false))
 				{
@@ -804,9 +819,6 @@ DWORD WINAPI ProcessFiles(LPVOID)
 		if (strFileName == ualPath.substr(ualPath.rfind('\\') + 1) || url.find(UALNAME) != std::string::npos)
 			strFileName = std::wstring(UALNAME) + L".zip";
 
-		if ((url.find(L"api.github.com") == std::string::npos) && (url.find(L"github.com") != std::string::npos))
-			string_replace(url, L"github.com", L"api.github.com/repos");
-
 		std::wcout << strFileName << " " << "found." << std::endl;
 		std::wcout << "Update URL:" << " " << url << std::endl;
 
@@ -858,6 +870,9 @@ DWORD WINAPI ProcessFiles(LPVOID)
 		auto iniEntry = pair.second;
 		removeQuotesFromString(iniEntry);
 
+		if (strIni.at(0) == '.')
+			continue;
+
 		auto excl = std::find_if(IniExcludes.begin(), IniExcludes.end(),
 			[&strIni, &iniEntry](auto it) { return (it.first == strIni && it.second == iniEntry); });
 
@@ -869,9 +884,6 @@ DWORD WINAPI ProcessFiles(LPVOID)
 
 		if (iter == FilesToUpdate.end())
 		{
-			if ((iniEntry.find("api.github.com") == std::string::npos) && (iniEntry.find("github.com") != std::string::npos))
-				string_replace(iniEntry, "github.com", "api.github.com/repos");
-
 			auto RemoteInfo = GetRemoteFileInfo(toWString(strIni), toWString(iniEntry));
 			auto nRemoteFileUpdatedDaysAgo = std::get<0>(RemoteInfo);
 			auto szDownloadURL = std::get<1>(RemoteInfo);
