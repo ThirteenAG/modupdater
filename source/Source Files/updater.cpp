@@ -585,7 +585,8 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 
 		auto user = str.substr(0, str.find_first_of('/'));
 		auto repo = str.substr(user.length() + 1);
-		repo.erase(repo.find_first_of('/'));
+		if (repo.find_first_of('/') != std::string::npos)
+			repo.erase(repo.find_first_of('/'));
 
 		szUrl = "https://api.github.com" + repos + user + "/" + repo + "/releases" + "?access_token=" GHTOKEN "&per_page=100";
 
