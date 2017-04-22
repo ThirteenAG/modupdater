@@ -3,6 +3,13 @@ workspace "modupdater"
    configurations { "Release", "Debug" }
    location "build"
    
+   defines { "rsc_CompanyName=\"ThirteenAG\"" }
+   defines { "rsc_LegalCopyright=\"MIT License\""} 
+   defines { "rsc_FileVersion=\"1.0.0.0\"", "rsc_ProductVersion=\"1.0.0.0\"" }
+   defines { "rsc_InternalName=\"%{prj.name}\"", "rsc_ProductName=\"%{prj.name}\"", "rsc_OriginalFilename=\"%{prj.name}.asi\"" }
+   defines { "rsc_FileDescription=\"https://thirteenag.github.io/wfp\"" }
+   defines { "rsc_UpdateUrl=\"https://github.com/ThirteenAG/modupdater\"" }
+   
    files { "source/Header Files/*.h" }
    files { "source/Source Files/*.cpp", "source/Source Files/*.c" }
    
@@ -32,12 +39,12 @@ workspace "modupdater"
    links { "libcurl_a.lib" }
    defines { "CURL_STATICLIB" }
    
-   prebuildcommands {
-    "msbuild ../build/libZipper.sln /t:zlibstat /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32 /p:PlatformToolset=v140",
-    "msbuild ../build/libZipper.sln /t:libZipper-static /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32 /p:PlatformToolset=v140",
-	"cd ../external/curl/winbuild/",
-	"nmake /f Makefile.vc mode=static RTLIBCFG=static ENABLE_IDN=no VC=14"
-   }
+	prebuildcommands {
+		"msbuild ../build/libZipper.sln /t:zlibstat /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32",
+		"msbuild ../build/libZipper.sln /t:libZipper-static /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32",
+		"cd ../external/curl/winbuild/",
+		"nmake /f Makefile.vc mode=static RTLIBCFG=static ENABLE_IDN=no"
+	}
 
 project "UpdaterApp"
    kind "ConsoleApp"
@@ -48,7 +55,8 @@ project "UpdaterApp"
 
    filter "configurations:Debug"
       defines { "DEBUG" }
-      flags { "Symbols" }
+      symbols "On"
+	  flags { "StaticRuntime" }
 	  characterset ("MBCS")
 
    filter "configurations:Release"
@@ -67,7 +75,8 @@ project "UpdaterPlugin"
 
    filter "configurations:Debug"
       defines { "DEBUG" }
-      flags { "Symbols" }
+      symbols "On"
+	  flags { "StaticRuntime" }
 	  characterset ("MBCS")
 
    filter "configurations:Release"
@@ -99,7 +108,7 @@ project "zlibstat"
 
    filter "configurations:Debug"
       defines { "DEBUG" }
-      flags { "Symbols" }
+      symbols "On"
 	  characterset ("MBCS")
 
    filter "configurations:ReleaseWithoutAsm"
@@ -135,7 +144,7 @@ project "libZipper-static"
 
    filter "configurations:Debug"
       defines { "DEBUG" }
-      flags { "Symbols" }
+      symbols "On"
 	  characterset ("MBCS")
 
    filter "configurations:ReleaseWithoutAsm"
