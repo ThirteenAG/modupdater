@@ -1,15 +1,15 @@
 #include "stdafx.h"
 #include "string_funcs.h"
-//to do - add pagination for github
+
 struct FileUpdateInfo
 {
-	std::wstring wszFullFilePath;
-	std::wstring wszFileName;
-	std::wstring wszDownloadURL;
-	std::wstring wszDownloadName;
-	int32_t nRemoteFileUpdatedDaysAgo;
-	int32_t nLocaFileUpdatedDaysAgo;
-	int32_t	nFileSize;
+    std::wstring wszFullFilePath;
+    std::wstring wszFileName;
+    std::wstring wszDownloadURL;
+    std::wstring wszDownloadName;
+    int32_t nRemoteFileUpdatedDaysAgo;
+    int32_t nLocaFileUpdatedDaysAgo;
+    int32_t	nFileSize;
 };
 
 CIniReader iniReader;
@@ -33,938 +33,953 @@ std::wstreambuf* outbuf;
 
 BOOL CheckForFileLock(LPCWSTR pFilePath, bool bReleaseLock = false)
 {
-	BOOL bResult = FALSE;
+    BOOL bResult = FALSE;
 
-	DWORD dwSession;
-	WCHAR szSessionKey[CCH_RM_SESSION_KEY + 1] = { 0 };
-	DWORD dwError = RmStartSession(&dwSession, 0, szSessionKey);
-	if (dwError == ERROR_SUCCESS)
-	{
-		dwError = RmRegisterResources(dwSession, 1, &pFilePath, 0, NULL, 0, NULL);
-		if (dwError == ERROR_SUCCESS)
-		{
-			UINT nProcInfoNeeded = 0;
-			UINT nProcInfo = 0;
-			RM_PROCESS_INFO rgpi[1];
-			DWORD dwReason;
+    DWORD dwSession;
+    WCHAR szSessionKey[CCH_RM_SESSION_KEY + 1] = { 0 };
+    DWORD dwError = RmStartSession(&dwSession, 0, szSessionKey);
+    if (dwError == ERROR_SUCCESS)
+    {
+        dwError = RmRegisterResources(dwSession, 1, &pFilePath, 0, NULL, 0, NULL);
+        if (dwError == ERROR_SUCCESS)
+        {
+            UINT nProcInfoNeeded = 0;
+            UINT nProcInfo = 0;
+            RM_PROCESS_INFO rgpi[1];
+            DWORD dwReason;
 
-			dwError = RmGetList(dwSession, &nProcInfoNeeded, &nProcInfo, rgpi, &dwReason);
-			if (dwError == ERROR_SUCCESS || dwError == ERROR_MORE_DATA)
-			{
-				if (nProcInfoNeeded > 0)
-				{
-					//If current process does not have enough privileges to close one of
-					//the "offending" processes, you'll get ERROR_FAIL_NOACTION_REBOOT
-					if (bReleaseLock)
-					{
-						dwError = RmShutdown(dwSession, RmForceShutdown, NULL);
-						if (dwError == ERROR_SUCCESS)
-						{
-							bResult = TRUE;
-						}
-					}
-				}
-				else
-					bResult = TRUE;
-			}
-		}
-	}
+            dwError = RmGetList(dwSession, &nProcInfoNeeded, &nProcInfo, rgpi, &dwReason);
+            if (dwError == ERROR_SUCCESS || dwError == ERROR_MORE_DATA)
+            {
+                if (nProcInfoNeeded > 0)
+                {
+                    //If current process does not have enough privileges to close one of
+                    //the "offending" processes, you'll get ERROR_FAIL_NOACTION_REBOOT
+                    if (bReleaseLock)
+                    {
+                        dwError = RmShutdown(dwSession, RmForceShutdown, NULL);
+                        if (dwError == ERROR_SUCCESS)
+                        {
+                            bResult = TRUE;
+                        }
+                    }
+                }
+                else
+                    bResult = TRUE;
+            }
+        }
+    }
 
-	RmEndSession(dwSession);
+    RmEndSession(dwSession);
 
-	SetLastError(dwError);
-	return bResult;
+    SetLastError(dwError);
+    return bResult;
 }
 
 void FindFilesRecursively(const std::wstring &directory, std::function<void(std::wstring, WIN32_FIND_DATAW)> callback)
 {
-	std::wstring tmp = directory + L"\\*";
-	WIN32_FIND_DATAW file;
-	HANDLE search_handle = FindFirstFileW(tmp.c_str(), &file);
-	if (search_handle != INVALID_HANDLE_VALUE)
-	{
-		std::vector<std::wstring> directories;
+    std::wstring tmp = directory + L"\\*";
+    WIN32_FIND_DATAW file;
+    HANDLE search_handle = FindFirstFileW(tmp.c_str(), &file);
+    if (search_handle != INVALID_HANDLE_VALUE)
+    {
+        std::vector<std::wstring> directories;
 
-		do
-		{
-			if (file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-			{
-				if ((!lstrcmpW(file.cFileName, L".")) || (!lstrcmpW(file.cFileName, L"..")))
-					continue;
-			}
+        do
+        {
+            if (file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            {
+                if ((!lstrcmpW(file.cFileName, L".")) || (!lstrcmpW(file.cFileName, L"..")))
+                    continue;
+            }
 
-			tmp = directory + L"\\" + std::wstring(file.cFileName);
-			if (!(file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-			{
-				callback(tmp, file);
-			}
+            tmp = directory + L"\\" + std::wstring(file.cFileName);
+            if (!(file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+            {
+                callback(tmp, file);
+            }
 
-			if (file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-				directories.push_back(tmp);
-		} while (FindNextFileW(search_handle, &file));
+            if (file.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                directories.push_back(tmp);
+        } while (FindNextFileW(search_handle, &file));
 
-		FindClose(search_handle);
+        FindClose(search_handle);
 
-		for (std::vector<std::wstring>::iterator iter = directories.begin(), end = directories.end(); iter != end; ++iter)
-			FindFilesRecursively(*iter, callback);
-	}
+        for (std::vector<std::wstring>::iterator iter = directories.begin(), end = directories.end(); iter != end; ++iter)
+            FindFilesRecursively(*iter, callback);
+    }
 }
 
 void CleanupLockedFiles()
 {
-	if (!ualPath.empty())
-	{
-		auto ualdel = ualPath + L".deleteonnextlaunch";
-		DeleteFileW(ualdel.c_str());
-	}
+    if (!ualPath.empty())
+    {
+        auto ualdel = ualPath + L".deleteonnextlaunch";
+        DeleteFileW(ualdel.c_str());
+    }
 
-	auto cb = [](std::wstring &s, WIN32_FIND_DATAW)
-	{
-		static std::wstring const targetExtension(L".deleteonnextlaunch");
-		if (s.size() >= targetExtension.size() && std::equal(s.end() - targetExtension.size(), s.end(), targetExtension.begin()))
-		{
-			DeleteFileW(s.c_str());
-			std::wcout << L"Deleted " << s << std::endl;
-		}
-	};
+    auto cb = [](std::wstring &s, WIN32_FIND_DATAW)
+    {
+        static std::wstring const targetExtension(L".deleteonnextlaunch");
+        if (s.size() >= targetExtension.size() && std::equal(s.end() - targetExtension.size(), s.end(), targetExtension.begin()))
+        {
+            DeleteFileW(s.c_str());
+            std::wcout << L"Deleted " << s << std::endl;
+        }
+    };
 
-	FindFilesRecursively(modulePath, cb);
+    FindFilesRecursively(modulePath, cb);
 }
 
 void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, std::wstring wzsFileName, std::wstring wszFullFilePath, std::wstring wszDownloadURL, std::wstring wszDownloadName, bool bCheckboxChecked, int32_t nRadioBtnID, bool bCreateDirectories)
 {
-	messagesBuffer = L"Downloading " + wszDownloadName;
-	std::wcout << messagesBuffer << std::endl;
+    messagesBuffer = L"Downloading " + wszDownloadName;
+    std::wcout << messagesBuffer << std::endl;
 
-	cpr::Response r;
+    cpr::Response r;
 
-	auto itr = std::find_if(downloads.begin(), downloads.end(), [&wszDownloadURL](std::pair<std::wstring, std::string> const& wstr)
-	{
-		return wstr.first == wszDownloadURL;
-	});
+    auto itr = std::find_if(downloads.begin(), downloads.end(), [&wszDownloadURL](std::pair<std::wstring, std::string> const& wstr)
+    {
+        return wstr.first == wszDownloadURL;
+    });
 
-	if (itr != downloads.end())
-	{
-		r.status_code = 200;
-		r.text = itr->second;
-	}
-	else
-	{
-		r = cpr::Get(cpr::Url{ toString(wszDownloadURL) });
-		downloads.push_back(std::make_pair(wszDownloadURL, r.text));
-	}
+    if (itr != downloads.end())
+    {
+        r.status_code = 200;
+        r.text = itr->second;
+    }
+    else
+    {
+        r = cpr::Get(cpr::Url{ toString(wszDownloadURL) });
+        downloads.push_back(std::make_pair(wszDownloadURL, r.text));
+    }
 
-	if (r.status_code == 200)
-	{
-		std::vector<uint8_t> buffer(r.text.begin(), r.text.end());
-		messagesBuffer = L"Download complete.";
-		std::wcout << messagesBuffer << std::endl;
+    if (r.status_code == 200)
+    {
+        std::vector<uint8_t> buffer(r.text.begin(), r.text.end());
+        messagesBuffer = L"Download complete.";
+        std::wcout << messagesBuffer << std::endl;
 
-		using namespace zipper;
-		Unzipper unzipper(buffer);
-		std::vector<ZipEntry> entries = unzipper.entries();
-		std::wstring szFilePath, szFileName;
+        using namespace zipper;
+        Unzipper unzipper(buffer);
+        std::vector<ZipEntry> entries = unzipper.entries();
+        std::wstring szFilePath, szFileName;
 
-		auto itr = std::find_if(entries.begin(), entries.end(), [&wzsFileName, &szFilePath, &szFileName](auto &s)
-		{
-			auto s1 = s.name.substr(0, s.name.rfind('/') + 1);
-			auto s2 = s.name.substr(s.name.rfind('/') + 1);
+        auto itr = std::find_if(entries.begin(), entries.end(), [&wzsFileName, &szFilePath, &szFileName](auto &s)
+        {
+            auto s1 = s.name.substr(0, s.name.rfind('/') + 1);
+            auto s2 = s.name.substr(s.name.rfind('/') + 1);
 
-			if (s2.size() != wzsFileName.size())
-				return false;
+            if (s2.size() != wzsFileName.size())
+                return false;
 
-			for (size_t i = 0; i < s2.size(); ++i)
-			{
-				if (!(::tolower(s2[i]) == ::tolower(wzsFileName[i])))
-				{
-					return false;
-				}
-			}
-			szFilePath = toWString(s1);
-			szFileName = toWString(s2);
-			return true;
-		});
+            for (size_t i = 0; i < s2.size(); ++i)
+            {
+                if (!(::tolower(s2[i]) == ::tolower(wzsFileName[i])))
+                {
+                    return false;
+                }
+            }
+            szFilePath = toWString(s1);
+            szFileName = toWString(s2);
+            return true;
+        });
 
-		if (itr != entries.end())
-		{
-			messagesBuffer = L"Processing " + wszDownloadName;
-			std::wcout << messagesBuffer << std::endl;
+        if (itr != entries.end())
+        {
+            messagesBuffer = L"Processing " + wszDownloadName;
+            std::wcout << messagesBuffer << std::endl;
 
-			for (auto it = entries.begin(); it != entries.end(); it++)
-			{
-				std::wstring lowcsIt, lowcsFilePath, lowcsFileName, itFileName, lowcsItFileName;
-				std::transform(it->name.begin(), it->name.end(), std::back_inserter(lowcsIt), ::tolower);
-				std::transform(szFilePath.begin(), szFilePath.end(), std::back_inserter(lowcsFilePath), ::tolower);
-				std::transform(szFileName.begin(), szFileName.end(), std::back_inserter(lowcsFileName), ::tolower);
-				itFileName = toWString(it->name);
-				std::replace(itFileName.begin(), itFileName.end(), '/', '\\');
-				itFileName.erase(0, szFilePath.length());
-				std::transform(itFileName.begin(), itFileName.end(), std::back_inserter(lowcsItFileName), ::tolower);
+            for (auto it = entries.begin(); it != entries.end(); it++)
+            {
+                std::wstring lowcsIt, lowcsFilePath, lowcsFileName, itFileName, lowcsItFileName;
+                std::transform(it->name.begin(), it->name.end(), std::back_inserter(lowcsIt), ::tolower);
+                std::transform(szFilePath.begin(), szFilePath.end(), std::back_inserter(lowcsFilePath), ::tolower);
+                std::transform(szFileName.begin(), szFileName.end(), std::back_inserter(lowcsFileName), ::tolower);
+                itFileName = toWString(it->name);
+                std::replace(itFileName.begin(), itFileName.end(), '/', '\\');
+                itFileName.erase(0, szFilePath.length());
+                std::transform(itFileName.begin(), itFileName.end(), std::back_inserter(lowcsItFileName), ::tolower);
 
-				if (!itFileName.empty() && (itFileName.back() != L'\\'))
-				{
-					if ((!bCheckboxChecked && lowcsIt.find(lowcsFileName) != std::string::npos) || (bCheckboxChecked && lowcsIt.find(lowcsFilePath) != std::string::npos))
-					{
-						if (wszFullFilePath.find(L"modloader\\modloader.asi") != std::string::npos && itFileName.find(L"modloader\\") != std::string::npos)
-							itFileName.erase(0, std::wstring(L"modloader\\").length());
+                if (!itFileName.empty() && (itFileName.back() != L'\\'))
+                {
+                    if ((!bCheckboxChecked && lowcsIt.find(lowcsFileName) != std::string::npos) || (bCheckboxChecked && lowcsIt.find(lowcsFilePath) != std::string::npos))
+                    {
+                        if (wszFullFilePath.find(L"modloader\\modloader.asi") != std::string::npos && itFileName.find(L"modloader\\") != std::string::npos)
+                            itFileName.erase(0, std::wstring(L"modloader\\").length());
 
-						std::wstring fullPath = wszFullFilePath.substr(0, wszFullFilePath.find_last_of('\\') + 1) + itFileName;
-						std::string fullPathStr = toString(fullPath);
+                        std::wstring fullPath = wszFullFilePath.substr(0, wszFullFilePath.find_last_of('\\') + 1) + itFileName;
+                        std::string fullPathStr = toString(fullPath);
 
-						if (CheckForFileLock(fullPath.c_str()) == FALSE)
-						{
-							std::wcout << itFileName << L" is locked. Renaming..." << std::endl;
-							if (MoveFileW(_T(fullPath.c_str()), _T(std::wstring(fullPath + L".deleteonnextlaunch").c_str())))
-								std::wcout << itFileName << L" was renamed to " << fullPath + L".deleteonnextlaunch" << std::endl;
-							else
-								std::wcout << L"Error: " << GetLastError() << std::endl;
-						}
-						else
-						{
-							std::wcout << itFileName << L" is not locked." << std::endl;
-						}
+                        if (CheckForFileLock(fullPath.c_str()) == FALSE)
+                        {
+                            std::wcout << itFileName << L" is locked. Renaming..." << std::endl;
+                            if (MoveFileW(_T(fullPath.c_str()), _T(std::wstring(fullPath + L".deleteonnextlaunch").c_str())))
+                                std::wcout << itFileName << L" was renamed to " << fullPath + L".deleteonnextlaunch" << std::endl;
+                            else
+                                std::wcout << L"Error: " << GetLastError() << std::endl;
+                        }
+                        else
+                        {
+                            std::wcout << itFileName << L" is not locked." << std::endl;
+                        }
 
-						if (bCreateDirectories)
-							createFolder(fullPath.substr(0, fullPath.find_last_of('\\')));
+                        if (bCreateDirectories)
+                            createFolder(fullPath.substr(0, fullPath.find_last_of('\\')));
 
-						auto pos = lowcsItFileName.find_last_of('.');
-						if (pos != std::string::npos)
-						{
-							auto iniName = lowcsItFileName;
-							auto iniPath = fullPath.substr(0, fullPath.find_last_of('.'));
-							auto iniEntry = it->name.substr(0, it->name.find_last_of('.'));
-							auto fileExtension = lowcsItFileName.substr(pos);
-							iniName.erase(pos);
-							iniName.append(L".ini");
-							iniPath.append(L".ini");
-							iniEntry.append(".ini");
+                        auto pos = lowcsItFileName.find_last_of('.');
+                        if (pos != std::string::npos)
+                        {
+                            auto iniName = lowcsItFileName;
+                            auto iniPath = fullPath.substr(0, fullPath.find_last_of('.'));
+                            auto iniEntry = it->name.substr(0, it->name.find_last_of('.'));
+                            auto fileExtension = lowcsItFileName.substr(pos);
+                            iniName.erase(pos);
+                            iniName.append(L".ini");
+                            iniPath.append(L".ini");
+                            iniEntry.append(".ini");
 
-							auto extractINI = [&unzipper, &iniEntry, &iniPath, &iniName]()->void
-							{
-								std::vector<uint8_t> vec;
-								unzipper.extractEntryToMemory(iniEntry, vec);
-								if (!vec.empty())
-								{
-									std::ofstream iniFile(iniPath, std::ios::binary);
-									unzipper.extractEntryToStream(iniEntry, iniFile);
-									iniFile.close();
-									messagesBuffer = iniName + L" was updated succesfully.";
-									std::wcout << messagesBuffer << std::endl;
-									vec.clear();
-								}
-							};
+                            auto extractINI = [&unzipper, &iniEntry, &iniPath, &iniName]()->void
+                            {
+                                std::vector<uint8_t> vec;
+                                unzipper.extractEntryToMemory(iniEntry, vec);
+                                if (!vec.empty())
+                                {
+                                    std::ofstream iniFile(iniPath, std::ios::binary);
+                                    unzipper.extractEntryToStream(iniEntry, iniFile);
+                                    iniFile.close();
+                                    messagesBuffer = iniName + L" was updated succesfully.";
+                                    std::wcout << messagesBuffer << std::endl;
+                                    vec.clear();
+                                }
+                            };
 
-							if (nRadioBtnID == RBUTTONID3) //don't replace
-							{
-								if (fileExtension == L".ini")
-									continue;
-							}
-							else
-							{
-								if (nRadioBtnID == RBUTTONID2) //replace all
-								{
-									if (!bCheckboxChecked)
-									{
-										extractINI();
-									}
-								}
-								else //compare and replace
-								{
-									if (bCheckboxChecked)
-									{
-										if (fileExtension == L".ini")
-										{
-											std::stringstream iniSS;
-											unzipper.extractEntryToStream(it->name, iniSS);
-											CIniReader ini1(iniSS);
-											CIniReader ini2(fullPathStr.c_str());
+                            if (nRadioBtnID == RBUTTONID3) //don't replace
+                            {
+                                if (fileExtension == L".ini")
+                                    continue;
+                            }
+                            else
+                            {
+                                if (nRadioBtnID == RBUTTONID2) //replace all
+                                {
+                                    if (!bCheckboxChecked)
+                                    {
+                                        extractINI();
+                                    }
+                                }
+                                else //compare and replace
+                                {
+                                    if (bCheckboxChecked)
+                                    {
+                                        if (fileExtension == L".ini")
+                                        {
+                                            std::stringstream iniSS;
+                                            unzipper.extractEntryToStream(it->name, iniSS);
+                                            CIniReader ini1(iniSS);
+                                            CIniReader ini2(fullPathStr.c_str());
 
-											if (ini1.CompareBySections(ini2))
-											{
-												messagesBuffer = iniName + L" doesn't seem to be changed.";
-												std::wcout << messagesBuffer << std::endl;
-												continue;
-											}
-											else
-											{
-												messagesBuffer = iniName + L" is changed, replacing.";
-												std::wcout << messagesBuffer << std::endl;
-											}
-										}
-									}
-									else
-									{
-										std::stringstream iniSS;
-										unzipper.extractEntryToStream(iniEntry, iniSS);
-										CIniReader ini1(iniSS);
-										CIniReader ini2(toString(iniPath).c_str());
+                                            if (ini1.CompareBySections(ini2))
+                                            {
+                                                messagesBuffer = iniName + L" doesn't seem to be changed.";
+                                                std::wcout << messagesBuffer << std::endl;
+                                                continue;
+                                            }
+                                            else
+                                            {
+                                                messagesBuffer = iniName + L" is changed, replacing.";
+                                                std::wcout << messagesBuffer << std::endl;
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        std::stringstream iniSS;
+                                        unzipper.extractEntryToStream(iniEntry, iniSS);
+                                        CIniReader ini1(iniSS);
+                                        CIniReader ini2(toString(iniPath).c_str());
 
-										if (ini1.CompareBySections(ini2))
-										{
-											messagesBuffer = iniName + L" doesn't seem to be changed.";
-											std::wcout << messagesBuffer << std::endl;
-										}
-										else
-										{
-											messagesBuffer = iniName + L" is changed, replacing.";
-											std::wcout << messagesBuffer << std::endl;
-											extractINI();
-										}
-									}
-								}
-							}
-						}
+                                        if (ini1.CompareBySections(ini2))
+                                        {
+                                            messagesBuffer = iniName + L" doesn't seem to be changed.";
+                                            std::wcout << messagesBuffer << std::endl;
+                                        }
+                                        else
+                                        {
+                                            messagesBuffer = iniName + L" is changed, replacing.";
+                                            std::wcout << messagesBuffer << std::endl;
+                                            extractINI();
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
-						std::ofstream outputFile(fullPath, std::ios::binary);
-						unzipper.extractEntryToStream(it->name, outputFile);
-						outputFile.close();
+                        std::ofstream outputFile(fullPath, std::ios::binary);
+                        unzipper.extractEntryToStream(it->name, outputFile);
+                        outputFile.close();
 
-						messagesBuffer = itFileName + L" was updated succesfully.";
-						std::wcout << messagesBuffer << std::endl;
-					}
-				}
-			}
-		}
-		unzipper.close();
-	}
+                        messagesBuffer = itFileName + L" was updated succesfully.";
+                        std::wcout << messagesBuffer << std::endl;
+                    }
+                }
+            }
+        }
+        unzipper.close();
+    }
 }
 
 void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<FileUpdateInfo>& FilesToDownload)
 {
-	auto TaskDialogCallbackProc = [](HWND hwnd, UINT uNotification, WPARAM wParam, LPARAM lParam, LONG_PTR dwRefData)->HRESULT
-	{
-		switch (uNotification)
-		{
-		case TDN_DIALOG_CONSTRUCTED:
-			DialogHwnd = hwnd;
-			if (dwRefData == 1)
-			{
-				SendMessage(hwnd, TDM_SET_MARQUEE_PROGRESS_BAR, 1, 0);
-				SendMessage(hwnd, TDM_SET_PROGRESS_BAR_MARQUEE, 1, 0);
-			}
-			else
-			{
-				if (dwRefData == 2)
-				{
-					SendMessage(DialogHwnd, TDM_SET_MARQUEE_PROGRESS_BAR, FALSE, 0);
-					SendMessage(DialogHwnd, TDM_SET_PROGRESS_BAR_POS, 100, 0);
-				}
-			}
-			break;
-		case TDN_BUTTON_CLICKED:
-			break;
-		case TDN_TIMER:
-			if (dwRefData == 1)
-			{
-				messagesBuffer.resize(55);
-				SendMessage(DialogHwnd, TDM_UPDATE_ELEMENT_TEXT, TDE_CONTENT, (LPARAM)messagesBuffer.c_str());
-			}
-			break;
-		case TDN_HYPERLINK_CLICKED:
-			ShellExecuteW(hwnd, _T(L"open"), (LPCWSTR)lParam, NULL, NULL, SW_SHOW);
-			break;
-		default:
-			break;
-		}
-		return FALSE;
-	};
+    auto TaskDialogCallbackProc = [](HWND hwnd, UINT uNotification, WPARAM wParam, LPARAM lParam, LONG_PTR dwRefData)->HRESULT
+    {
+        switch (uNotification)
+        {
+        case TDN_DIALOG_CONSTRUCTED:
+            DialogHwnd = hwnd;
+            if (dwRefData == 1)
+            {
+                SendMessage(hwnd, TDM_SET_MARQUEE_PROGRESS_BAR, 1, 0);
+                SendMessage(hwnd, TDM_SET_PROGRESS_BAR_MARQUEE, 1, 0);
+            }
+            else
+            {
+                if (dwRefData == 2)
+                {
+                    SendMessage(DialogHwnd, TDM_SET_MARQUEE_PROGRESS_BAR, FALSE, 0);
+                    SendMessage(DialogHwnd, TDM_SET_PROGRESS_BAR_POS, 100, 0);
+                }
+            }
+            break;
+        case TDN_BUTTON_CLICKED:
+            break;
+        case TDN_TIMER:
+            if (dwRefData == 1)
+            {
+                messagesBuffer.resize(55);
+                SendMessage(DialogHwnd, TDM_UPDATE_ELEMENT_TEXT, TDE_CONTENT, (LPARAM)messagesBuffer.c_str());
+            }
+            break;
+        case TDN_HYPERLINK_CLICKED:
+            ShellExecuteW(hwnd, _T(L"open"), (LPCWSTR)lParam, NULL, NULL, SW_SHOW);
+            break;
+        default:
+            break;
+        }
+        return FALSE;
+    };
 
-	auto EnumWindowsProc = [](HWND hwnd, LPARAM lParam)->BOOL
-	{
-		DWORD lpdwProcessId;
-		GetWindowThreadProcessId(hwnd, &lpdwProcessId);
-		if (lpdwProcessId == lParam)
-		{
-			MainHwnd = hwnd;
-			return FALSE;
-		}
-		return TRUE;
-	};
+    auto EnumWindowsProc = [](HWND hwnd, LPARAM lParam)->BOOL
+    {
+        DWORD lpdwProcessId;
+        GetWindowThreadProcessId(hwnd, &lpdwProcessId);
+        if (lpdwProcessId == lParam)
+        {
+            MainHwnd = hwnd;
+            return FALSE;
+        }
+        return TRUE;
+    };
 
-	TASKDIALOGCONFIG tdc = { sizeof(TASKDIALOGCONFIG) };
-	auto szTitle = L"modupdater";
-	auto szCheckboxText = L"Update all downloaded files.";
-	auto szHeader = std::wstring(L"Updates available:\n");
-	std::wstring szBodyText;
-	int32_t nTotalUpdateSize = 0;
+    TASKDIALOGCONFIG tdc = { sizeof(TASKDIALOGCONFIG) };
+    auto szTitle = L"modupdater";
+    auto szCheckboxText = L"Update all downloaded files.";
+    auto szHeader = std::wstring(L"Updates available:\n");
+    std::wstring szBodyText;
+    int32_t nTotalUpdateSize = 0;
 
-	if (!FilesToDownload.empty())
-	{
-		for (auto &it : FilesToDownload)
-		{
-			szBodyText += L"<a href=\"" + it.wszDownloadURL + L"\">" + it.wszFileName + L"</a> ";
-			szBodyText += L"(" + it.wszDownloadName + L" / " + formatBytesW(it.nFileSize) + L")" L"\n";
-			szBodyText += L"Remote file updated " + std::to_wstring(it.nRemoteFileUpdatedDaysAgo) + L" days ago." L"\n";
-			szBodyText += L"Local file was not present. This mod will be installed." L"\n";
-			szBodyText += L"\n";
-			nTotalUpdateSize += it.nFileSize;
-		}
-	}
+    if (!FilesToDownload.empty())
+    {
+        for (auto &it : FilesToDownload)
+        {
+            szBodyText += L"<a href=\"" + it.wszDownloadURL + L"\">" + it.wszFileName + L"</a> ";
+            szBodyText += L"(" + it.wszDownloadName + L" / " + formatBytesW(it.nFileSize) + L")" L"\n";
+            szBodyText += L"Remote file updated " + std::to_wstring(it.nRemoteFileUpdatedDaysAgo) + L" days ago." L"\n";
+            szBodyText += L"Local file was not present. This mod will be installed." L"\n";
+            szBodyText += L"\n";
+            nTotalUpdateSize += it.nFileSize;
+        }
+    }
 
-	if (!FilesToUpdate.empty())
-	{
-		for (auto &it : FilesToUpdate)
-		{
-			szBodyText += L"<a href=\"" + it.wszDownloadURL + L"\">" + it.wszFileName + L"</a> ";
-			szBodyText += L"(" + it.wszDownloadName + L" / " + formatBytesW(it.nFileSize) + L")" L"\n";
-			szBodyText += L"Remote file updated " + std::to_wstring(it.nRemoteFileUpdatedDaysAgo) + L" days ago." L"\n";
-			szBodyText += L"Local file updated " + std::to_wstring(it.nLocaFileUpdatedDaysAgo) + L" days ago." L"\n";
-			szBodyText += L"\n";
-			nTotalUpdateSize += it.nFileSize;
-		}
-	}
+    if (!FilesToUpdate.empty())
+    {
+        for (auto &it : FilesToUpdate)
+        {
+            szBodyText += L"<a href=\"" + it.wszDownloadURL + L"\">" + it.wszFileName + L"</a> ";
+            szBodyText += L"(" + it.wszDownloadName + L" / " + formatBytesW(it.nFileSize) + L")" L"\n";
+            szBodyText += L"Remote file updated " + std::to_wstring(it.nRemoteFileUpdatedDaysAgo) + L" days ago." L"\n";
+            szBodyText += L"Local file updated " + std::to_wstring(it.nLocaFileUpdatedDaysAgo) + L" days ago." L"\n";
+            szBodyText += L"\n";
+            nTotalUpdateSize += it.nFileSize;
+        }
+    }
 
-	szBodyText += L"Do you want to download these updates?";
+    szBodyText += L"Do you want to download these updates?";
 
-	auto szButton1Text = std::wstring(L"Download and install updates now\n" + formatBytesW(nTotalUpdateSize));
-	std::string szURL = std::string(iniReader.ReadString("MISC", "WebUrl", "https://thirteenag.github.io/wfp"));
-	auto wszFooter = std::wstring(L"<a href=\"" + toWString(szURL) + L"\">" + toWString(szURL) + L"</a>");
+    auto szButton1Text = std::wstring(L"Download and install updates now\n" + formatBytesW(nTotalUpdateSize));
+    std::string szURL = std::string(iniReader.ReadString("MISC", "WebUrl", "https://thirteenag.github.io/wfp"));
+    auto wszFooter = std::wstring(L"<a href=\"" + toWString(szURL) + L"\">" + toWString(szURL) + L"</a>");
 
-	TASKDIALOG_BUTTON aCustomButtons[] = {
-		{ BUTTONID1, szButton1Text.c_str() },
-		{ BUTTONID2, L"Cancel" },
-	};
+    TASKDIALOG_BUTTON aCustomButtons[] = {
+        { BUTTONID1, szButton1Text.c_str() },
+        { BUTTONID2, L"Cancel" },
+    };
 
-	TASKDIALOG_BUTTON radioButtons[] =
-	{
-		{ RBUTTONID1, L"INI files: replace if sections or keys don't match" },
-		{ RBUTTONID2, L"INI files: replace all" },
-		{ RBUTTONID3, L"Don't replace INI files" }
-	};
+    TASKDIALOG_BUTTON radioButtons[] =
+    {
+        { RBUTTONID1, L"INI files: replace if sections or keys don't match" },
+        { RBUTTONID2, L"INI files: replace all" },
+        { RBUTTONID3, L"Don't replace INI files" }
+    };
 
-	tdc.hwndParent = NULL;
-	tdc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS | TDF_ENABLE_HYPERLINKS | TDF_SIZE_TO_CONTENT | TDF_CAN_BE_MINIMIZED;
-	tdc.pButtons = aCustomButtons;
-	tdc.cButtons = _countof(aCustomButtons);
-	tdc.pRadioButtons = radioButtons;
-	tdc.cRadioButtons = _countof(radioButtons);
-	//tdc.pszMainIcon = TD_WARNING_ICON;
-	tdc.pszWindowTitle = szTitle;
-	tdc.pszMainInstruction = szHeader.c_str();
-	tdc.pszContent = szBodyText.c_str();
-	tdc.pszVerificationText = szCheckboxText;
-	tdc.pszFooter = wszFooter.c_str();
-	tdc.pszFooterIcon = TD_INFORMATION_ICON;
-	tdc.pfCallback = TaskDialogCallbackProc;
-	tdc.lpCallbackData = 0;
-	auto nClickedBtnID = -1;
-	auto nRadioBtnID = -1;
-	auto bCheckboxChecked = 0;
-	auto hr = TaskDialogIndirect(&tdc, &nClickedBtnID, &nRadioBtnID, &bCheckboxChecked);
+    tdc.hwndParent = NULL;
+    tdc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS | TDF_ENABLE_HYPERLINKS | TDF_SIZE_TO_CONTENT | TDF_CAN_BE_MINIMIZED;
+    tdc.pButtons = aCustomButtons;
+    tdc.cButtons = _countof(aCustomButtons);
+    tdc.pRadioButtons = radioButtons;
+    tdc.cRadioButtons = _countof(radioButtons);
+    //tdc.pszMainIcon = TD_WARNING_ICON;
+    tdc.pszWindowTitle = szTitle;
+    tdc.pszMainInstruction = szHeader.c_str();
+    tdc.pszContent = szBodyText.c_str();
+    tdc.pszVerificationText = szCheckboxText;
+    tdc.pszFooter = wszFooter.c_str();
+    tdc.pszFooterIcon = TD_INFORMATION_ICON;
+    tdc.pfCallback = TaskDialogCallbackProc;
+    tdc.lpCallbackData = 0;
+    auto nClickedBtnID = -1;
+    auto nRadioBtnID = -1;
+    auto bCheckboxChecked = 0;
+    auto hr = TaskDialogIndirect(&tdc, &nClickedBtnID, &nRadioBtnID, &bCheckboxChecked);
 
-	if (SUCCEEDED(hr) && nClickedBtnID == BUTTONID1)
-	{
-		TASKDIALOG_BUTTON aCustomButtons2[] = {
-			{ BUTTONID3, L"Cancel" },
-		};
+    if (SUCCEEDED(hr) && nClickedBtnID == BUTTONID1)
+    {
+        TASKDIALOG_BUTTON aCustomButtons2[] = {
+            { BUTTONID3, L"Cancel" },
+        };
 
-		tdc.pButtons = aCustomButtons2;
-		tdc.cButtons = _countof(aCustomButtons2);
-		//tdc.pszMainIcon = TD_INFORMATION_ICON;
-		tdc.dwFlags |= TDF_SHOW_MARQUEE_PROGRESS_BAR;
-		tdc.dwFlags |= TDF_CALLBACK_TIMER;
-		tdc.pszMainInstruction = L"Downloading Update...";
-		tdc.pszContent = L"Preparing to download...";
-		tdc.pszVerificationText = L"";
-		tdc.pRadioButtons = NULL;
-		tdc.cRadioButtons = NULL;
-		tdc.lpCallbackData = 1;
+        tdc.pButtons = aCustomButtons2;
+        tdc.cButtons = _countof(aCustomButtons2);
+        //tdc.pszMainIcon = TD_INFORMATION_ICON;
+        tdc.dwFlags |= TDF_SHOW_MARQUEE_PROGRESS_BAR;
+        tdc.dwFlags |= TDF_CALLBACK_TIMER;
+        tdc.pszMainInstruction = L"Downloading Update...";
+        tdc.pszContent = L"Preparing to download...";
+        tdc.pszVerificationText = L"";
+        tdc.pRadioButtons = NULL;
+        tdc.cRadioButtons = NULL;
+        tdc.lpCallbackData = 1;
 
-		bool bNotCanceledorError = false;
-		std::thread t([&FilesToUpdate, &FilesToDownload, &bCheckboxChecked, &nRadioBtnID, &bNotCanceledorError]
-		{
-			std::vector<std::pair<std::wstring, std::string>> downloads;
+        bool bNotCanceledorError = false;
+        std::thread t([&FilesToUpdate, &FilesToDownload, &bCheckboxChecked, &nRadioBtnID, &bNotCanceledorError]
+        {
+            std::vector<std::pair<std::wstring, std::string>> downloads;
 
-			for (auto &it : FilesToDownload)
-			{
-				UpdateFile(downloads, it.wszFileName, it.wszFullFilePath, it.wszDownloadURL, it.wszDownloadName, true, nRadioBtnID, true);
-			}
+            for (auto &it : FilesToDownload)
+            {
+                UpdateFile(downloads, it.wszFileName, it.wszFullFilePath, it.wszDownloadURL, it.wszDownloadName, true, nRadioBtnID, true);
+            }
 
-			for (auto &it : FilesToUpdate)
-			{
-				UpdateFile(downloads, it.wszFileName, it.wszFullFilePath, it.wszDownloadURL, it.wszDownloadName, bCheckboxChecked != 0, nRadioBtnID, false);
-			}
-			SendMessage(DialogHwnd, TDM_CLICK_BUTTON, static_cast<WPARAM>(TDCBF_OK_BUTTON), 0);
-			bNotCanceledorError = true;
-			downloads.clear();
-		});
+            for (auto &it : FilesToUpdate)
+            {
+                UpdateFile(downloads, it.wszFileName, it.wszFullFilePath, it.wszDownloadURL, it.wszDownloadName, bCheckboxChecked != 0, nRadioBtnID, false);
+            }
+            SendMessage(DialogHwnd, TDM_CLICK_BUTTON, static_cast<WPARAM>(TDCBF_OK_BUTTON), 0);
+            bNotCanceledorError = true;
+            downloads.clear();
+        });
 
-		hr = TaskDialogIndirect(&tdc, &nClickedBtnID, nullptr, nullptr);
+        hr = TaskDialogIndirect(&tdc, &nClickedBtnID, nullptr, nullptr);
 
-		if (SUCCEEDED(hr))
-		{
-			t.join();
+        if (SUCCEEDED(hr))
+        {
+            t.join();
 
-			if (bNotCanceledorError && nClickedBtnID != BUTTONID3)
-			{
-				TASKDIALOG_BUTTON aCustomButtons3[] = {
-					{ BUTTONID4, L"Restart the game to apply changes" },
-					{ BUTTONID5, L"Continue" },
-				};
+            if (bNotCanceledorError && nClickedBtnID != BUTTONID3)
+            {
+                TASKDIALOG_BUTTON aCustomButtons3[] = {
+                    { BUTTONID4, L"Restart the game to apply changes" },
+                    { BUTTONID5, L"Continue" },
+                };
 
-				tdc.pButtons = aCustomButtons3;
-				tdc.cButtons = _countof(aCustomButtons3);
-				tdc.pszMainInstruction = L"Update completed succesfully.";
-				tdc.pszContent = L"";
-				tdc.lpCallbackData = 2;
-				tdc.dwFlags |= TDF_CALLBACK_TIMER;
+                tdc.pButtons = aCustomButtons3;
+                tdc.cButtons = _countof(aCustomButtons3);
+                tdc.pszMainInstruction = L"Update completed succesfully.";
+                tdc.pszContent = L"";
+                tdc.lpCallbackData = 2;
+                tdc.dwFlags |= TDF_CALLBACK_TIMER;
 
-				hr = TaskDialogIndirect(&tdc, &nClickedBtnID, nullptr, nullptr);
+                hr = TaskDialogIndirect(&tdc, &nClickedBtnID, nullptr, nullptr);
 
-				bool bSkipUpdateCompleteDialog = iniReader.ReadInteger("MISC", "SkipUpdateCompleteDialog", 0) != 0;
-				if (bSkipUpdateCompleteDialog)
-					SendMessage(DialogHwnd, TDM_CLICK_BUTTON, static_cast<WPARAM>(TDCBF_OK_BUTTON), 0);
+                bool bSkipUpdateCompleteDialog = iniReader.ReadInteger("MISC", "SkipUpdateCompleteDialog", 0) != 0;
+                if (bSkipUpdateCompleteDialog)
+                    SendMessage(DialogHwnd, TDM_CLICK_BUTTON, static_cast<WPARAM>(TDCBF_OK_BUTTON), 0);
 
-				if (nClickedBtnID == BUTTONID4)
-				{
-					auto workingDir = processPath.substr(0, processPath.find_last_of('\\'));
-					SHELLEXECUTEINFOW ShExecInfo = { 0 };
-					ShExecInfo.cbSize = sizeof(SHELLEXECUTEINFOW);
-					ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
-					ShExecInfo.hwnd = NULL;
-					ShExecInfo.lpVerb = NULL;
-					ShExecInfo.lpFile = processPath.c_str();
-					ShExecInfo.lpParameters = L"";
-					ShExecInfo.lpDirectory = workingDir.c_str();
-					ShExecInfo.nShow = SW_SHOWNORMAL;
-					ShExecInfo.hInstApp = NULL;
-					ShellExecuteExW(&ShExecInfo);
-					//WaitForSingleObject(ShExecInfo.hProcess, INFINITE);
-					ExitProcess(0);
-				}
-				else
-				{
-					if (nClickedBtnID == BUTTONID5)
-					{
-						if (MainHwnd == NULL)
-							EnumWindows(EnumWindowsProc, GetCurrentProcessId());
+                if (nClickedBtnID == BUTTONID4)
+                {
+                    auto workingDir = processPath.substr(0, processPath.find_last_of('\\'));
+                    SHELLEXECUTEINFOW ShExecInfo = { 0 };
+                    ShExecInfo.cbSize = sizeof(SHELLEXECUTEINFOW);
+                    ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+                    ShExecInfo.hwnd = NULL;
+                    ShExecInfo.lpVerb = NULL;
+                    ShExecInfo.lpFile = processPath.c_str();
+                    ShExecInfo.lpParameters = L"";
+                    ShExecInfo.lpDirectory = workingDir.c_str();
+                    ShExecInfo.nShow = SW_SHOWNORMAL;
+                    ShExecInfo.hInstApp = NULL;
+                    ShellExecuteExW(&ShExecInfo);
+                    //WaitForSingleObject(ShExecInfo.hProcess, INFINITE);
+                    ExitProcess(0);
+                }
+                else
+                {
+                    if (nClickedBtnID == BUTTONID5)
+                    {
+                        if (MainHwnd == NULL)
+                            EnumWindows(EnumWindowsProc, GetCurrentProcessId());
 
-						SwitchToThisWindow(MainHwnd, TRUE);
-					}
-				}
-			}
-			else
-			{
-				std::wcout << L"Update cancelled or error occured." << std::endl;
-				if (MainHwnd == NULL)
-					EnumWindows(EnumWindowsProc, GetCurrentProcessId());
+                        SwitchToThisWindow(MainHwnd, TRUE);
+                    }
+                }
+            }
+            else
+            {
+                std::wcout << L"Update cancelled or error occured." << std::endl;
+                if (MainHwnd == NULL)
+                    EnumWindows(EnumWindowsProc, GetCurrentProcessId());
 
-				SwitchToThisWindow(MainHwnd, TRUE);
-			}
-		}
-	}
-	else
-	{
-		std::wcout << L"Update cancelled." << std::endl;
-		if (MainHwnd == NULL)
-			EnumWindows(EnumWindowsProc, GetCurrentProcessId());
+                SwitchToThisWindow(MainHwnd, TRUE);
+            }
+        }
+    }
+    else
+    {
+        std::wcout << L"Update cancelled." << std::endl;
+        if (MainHwnd == NULL)
+            EnumWindows(EnumWindowsProc, GetCurrentProcessId());
 
-		SwitchToThisWindow(MainHwnd, TRUE);
-	}
+        SwitchToThisWindow(MainHwnd, TRUE);
+    }
 }
 
 std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std::wstring strFileName, std::wstring strUrl)
 {
-	auto pos = strFileName.find_last_of('.');
-	auto strExtension = strFileName.substr(pos);
-	if (pos != std::string::npos)
-		strFileName.erase(pos);
-	strFileName.append(L".zip");
+    auto pos = strFileName.find_last_of('.');
+    auto strExtension = strFileName.substr(pos);
+    if (pos != std::string::npos)
+        strFileName.erase(pos);
+    strFileName.append(L".zip");
 
-	auto szUrl = toString(strUrl);
+    auto szUrl = toString(strUrl);
 
-	if (szUrl.find("github.com") != std::string::npos)
-	{
-		static std::string github = "github.com";
-		static std::string repos = "/repos/";
-		auto str = szUrl;
+    if (szUrl.find("github.com") != std::string::npos)
+    {
+        static std::string github = "github.com";
+        static std::string repos = "/repos/";
+        auto str = szUrl;
 
-		str.erase(0, str.find(github) + (github.length() + 1));
-		if (szUrl.find(repos) != std::string::npos)
-			str.erase(0, str.find(repos) + (repos.length()));
+        str.erase(0, str.find(github) + (github.length() + 1));
+        if (szUrl.find(repos) != std::string::npos)
+            str.erase(0, str.find(repos) + (repos.length()));
 
-		auto user = str.substr(0, str.find_first_of('/'));
-		auto repo = str.substr(user.length() + 1);
-		if (repo.find_first_of('/') != std::string::npos)
-			repo.erase(repo.find_first_of('/'));
+        auto user = str.substr(0, str.find_first_of('/'));
+        auto repo = str.substr(user.length() + 1);
+        if (repo.find_first_of('/') != std::string::npos)
+            repo.erase(repo.find_first_of('/'));
 
-		szUrl = "https://api.github.com" + repos + user + "/" + repo + "/releases" + "?access_token=" GHTOKEN "&per_page=100";
+        szUrl = "https://api.github.com" + repos + user + "/" + repo + "/releases" + "?access_token=" GHTOKEN; // "&per_page=100";
 
-		std::cout << "Connecting to GitHub: " << szUrl << std::endl;
+        std::cout << "Connecting to GitHub: " << szUrl << std::endl;
 
-		auto r = cpr::Get(cpr::Url{ szUrl });
+        auto rLink = cpr::Head(cpr::Url{ szUrl });
 
-		if (r.status_code == 200)
-		{
-			Json::Value parsedFromString;
-			Json::Reader reader;
-			bool parsingSuccessful = reader.parse(r.text, parsedFromString);
+        size_t numPages = 1;
+        static const std::string page = "&page=";
+        auto numPagesStr = rLink.header["Link"];
+        if (!numPagesStr.empty())
+        {
+            numPagesStr = numPagesStr.substr(find_nth(numPagesStr, 0, page, 1) + page.length());
+            numPagesStr = numPagesStr.substr(0, numPagesStr.find('>'));
+            numPages = std::stoi(numPagesStr);
+        }
 
-			if (parsingSuccessful)
-			{
-				std::cout << "GitHub's response parsed successfully." << std::endl;
+        for (size_t i = 1; i <= numPages; i++)
+        {
+            auto r = cpr::Get(cpr::Url{ szUrl + page + std::to_string(i) });
 
-				for (Json::ValueConstIterator it = parsedFromString.begin(); it != parsedFromString.end(); ++it)
-				{
-					const Json::Value& wsFix = *it;
+            if (r.status_code == 200)
+            {
+                Json::Value parsedFromString;
+                Json::Reader reader;
+                bool parsingSuccessful = reader.parse(r.text, parsedFromString);
 
-					for (size_t i = 0; i < wsFix["assets"].size(); i++)
-					{
-						std::string str1, str2;
-						std::string name(wsFix["assets"][i]["name"].asString());
+                if (parsingSuccessful)
+                {
+                    std::cout << "GitHub's response parsed successfully." << " Page " << i << "." << std::endl;
 
-						std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
-						std::transform(name.begin(), name.end(), std::back_inserter(str2), ::tolower);
+                    for (Json::ValueConstIterator it = parsedFromString.begin(); it != parsedFromString.end(); ++it)
+                    {
+                        const Json::Value& wsFix = *it;
 
-						if (str1 == str2)
-						{
-							std::cout << "Found " << wsFix["assets"][i]["name"] << "on github" << std::endl;
-							auto szDownloadURL = wsFix["assets"][i]["browser_download_url"].asString();
-							auto szDownloadName = wsFix["assets"][i]["name"].asString();
-							auto szFileSize = wsFix["assets"][i]["size"].asString();
+                        for (size_t i = 0; i < wsFix["assets"].size(); i++)
+                        {
+                            std::string str1, str2;
+                            std::string name(wsFix["assets"][i]["name"].asString());
 
-							using namespace date;
-							int32_t y, m, d; // "updated_at": "2016-08-16T11:42:53Z"
-							sscanf_s(wsFix["assets"][i]["updated_at"].asCString(), "%d-%d-%d%*s", &y, &m, &d);
-							auto nRemoteFileUpdateTime = date::year(y) / date::month(m) / date::day(d);
-							auto now = floor<days>(std::chrono::system_clock::now());
-							return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
-						}
-					}
-				}
-				std::cout << "Nothing is found on GitHub." << std::endl << std::endl;
-			}
-		}
-		else
-		{
-			std::cout << "Something wrong! " << "Status code: " << r.status_code << std::endl;
-		}
-	}
-	else
-	{
-		if (szUrl.find("node-js-geturl") != std::string::npos)
-		{
-			auto r = cpr::Get(cpr::Url{ szUrl });
+                            std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
+                            std::transform(name.begin(), name.end(), std::back_inserter(str2), ::tolower);
 
-			if (!r.text.empty())
-			{
-				if (r.text.at(0) == '.' || r.text.at(0) == '/')
-				{
-					auto sstr1 = std::string("?url=(");
-					auto sstr2 = szUrl.rfind(sstr1) + sstr1.length();
-					szUrl = szUrl.substr(sstr2);
-					szUrl = szUrl.substr(0, find_nth(szUrl, 0, std::string("/"), 2));
-					szUrl += r.text.substr(r.text.find_first_of('/'));
-				}
-				else
-					szUrl = r.text;
-			}
-		}
+                            if (str1 == str2)
+                            {
+                                std::cout << "Found " << wsFix["assets"][i]["name"] << "on github" << std::endl;
+                                auto szDownloadURL = wsFix["assets"][i]["browser_download_url"].asString();
+                                auto szDownloadName = wsFix["assets"][i]["name"].asString();
+                                auto szFileSize = wsFix["assets"][i]["size"].asString();
 
-		std::cout << "Connecting to " << szUrl << std::endl;
+                                using namespace date;
+                                int32_t y, m, d; // "updated_at": "2016-08-16T11:42:53Z"
+                                sscanf_s(wsFix["assets"][i]["updated_at"].asCString(), "%d-%d-%d%*s", &y, &m, &d);
+                                auto nRemoteFileUpdateTime = date::year(y) / date::month(m) / date::day(d);
+                                auto now = floor<days>(std::chrono::system_clock::now());
+                                return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                std::cout << "Something wrong! " << "Status code: " << r.status_code << std::endl;
+            }
+        }
+        std::cout << "Nothing is found on GitHub." << std::endl << std::endl;
+    }
+    else
+    {
+        if (szUrl.find("node-js-geturl") != std::string::npos)
+        {
+            auto r = cpr::Get(cpr::Url{ szUrl });
 
-		auto rHead = cpr::Head(cpr::Url{ szUrl });
+            if (!r.text.empty())
+            {
+                if (r.text.at(0) == '.' || r.text.at(0) == '/')
+                {
+                    auto sstr1 = std::string("?url=(");
+                    auto sstr2 = szUrl.rfind(sstr1) + sstr1.length();
+                    szUrl = szUrl.substr(sstr2);
+                    szUrl = szUrl.substr(0, find_nth(szUrl, 0, std::string("/"), 2));
+                    szUrl += r.text.substr(r.text.find_first_of('/'));
+                }
+                else
+                    szUrl = r.text;
+            }
+        }
 
-		if (rHead.status_code == 200)
-		{
-			std::cout << "Found " << rHead.header["Content-Type"] << std::endl;
-			std::string szDownloadURL = rHead.url.c_str();
-			std::string tempStr = szDownloadURL.substr(szDownloadURL.find_last_of('/') + 1);
-			auto endPos = tempStr.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890_.");
-			std::string szDownloadName = tempStr.substr(0, (endPos == 0) ? std::string::npos : endPos);
-			std::string szFileSize = rHead.header["Content-Length"];
+        std::cout << "Connecting to " << szUrl << std::endl;
 
-			std::tm t;
-			std::istringstream ss(rHead.header["Last-Modified"]); // Wed, 27 Jul 2016 18:43:42 GMT
-			ss >> std::get_time(&t, "%a, %d %b %Y %H:%M:%S %Z");
+        auto rHead = cpr::Head(cpr::Url{ szUrl });
 
-			using namespace date;
-			auto nRemoteFileUpdateTime = date::year(t.tm_year + 1900) / date::month(t.tm_mon + 1) / date::day(t.tm_mday);
-			auto now = floor<days>(std::chrono::system_clock::now());
-			return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
-		}
-		else
-			std::wcout << L"Seems like this archive doesn't contain " << strFileName.substr(0, strFileName.find_last_of(L".")) << strExtension << std::endl;
-	}
+        if (rHead.status_code == 200)
+        {
+            std::cout << "Found " << rHead.header["Content-Type"] << std::endl;
+            std::string szDownloadURL = rHead.url.c_str();
+            std::string tempStr = szDownloadURL.substr(szDownloadURL.find_last_of('/') + 1);
+            auto endPos = tempStr.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890_.");
+            std::string szDownloadName = tempStr.substr(0, (endPos == 0) ? std::string::npos : endPos);
+            std::string szFileSize = rHead.header["Content-Length"];
 
-	return std::make_tuple(-1, "", "", "");
+            std::tm t;
+            std::istringstream ss(rHead.header["Last-Modified"]); // Wed, 27 Jul 2016 18:43:42 GMT
+            ss >> std::get_time(&t, "%a, %d %b %Y %H:%M:%S %Z");
+
+            using namespace date;
+            auto nRemoteFileUpdateTime = date::year(t.tm_year + 1900) / date::month(t.tm_mon + 1) / date::day(t.tm_mday);
+            auto now = floor<days>(std::chrono::system_clock::now());
+            return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+        }
+        else
+            std::wcout << L"Seems like this archive doesn't contain " << strFileName.substr(0, strFileName.find_last_of(L".")) << strExtension << std::endl;
+    }
+
+    return std::make_tuple(-1, "", "", "");
 }
 
 int32_t GetLocalFileInfo(FILETIME ftCreate, FILETIME ftLastAccess, FILETIME ftLastWrite)
 {
-	using namespace date;
-	SYSTEMTIME stUTC;
-	FileTimeToSystemTime(&ftLastWrite, &stUTC);
-	auto nLocalFileUpdateTime = date::year(stUTC.wYear) / date::month(stUTC.wMonth) / date::day(stUTC.wDay);
-	auto now = floor<days>(std::chrono::system_clock::now());
-	return (sys_days{ now } -sys_days{ nLocalFileUpdateTime }).count();
+    using namespace date;
+    SYSTEMTIME stUTC;
+    FileTimeToSystemTime(&ftLastWrite, &stUTC);
+    auto nLocalFileUpdateTime = date::year(stUTC.wYear) / date::month(stUTC.wMonth) / date::day(stUTC.wDay);
+    auto now = floor<days>(std::chrono::system_clock::now());
+    return (sys_days{ now } -sys_days{ nLocalFileUpdateTime }).count();
 }
 
 DWORD WINAPI ProcessFiles(LPVOID)
 {
-	CleanupLockedFiles();
+    CleanupLockedFiles();
 
-	if (iniReader.ReadInteger("MISC", "OutputLogToFile", 0) != 0)
-	{
-		logFile.open(modulePath + L"modupdater.log");
-		outbuf = std::wcout.rdbuf(logFile.rdbuf());
-		std::wcout << "Current directory: " << modulePath << std::endl;
-	}
-	
-	bool bSelfUpdate = iniReader.ReadInteger("MISC", "SelfUpdate", 1) != 0;
-	bool bUpdateUAL = iniReader.ReadInteger("MISC", "UpdateUAL", 1) != 0;
-	bool bAlwaysUpdate = iniReader.ReadInteger("DEBUG", "AlwaysUpdate", 0) != 0;
+    if (iniReader.ReadInteger("MISC", "OutputLogToFile", 0) != 0)
+    {
+        logFile.open(modulePath + L"modupdater.log");
+        outbuf = std::wcout.rdbuf(logFile.rdbuf());
+        std::wcout << "Current directory: " << modulePath << std::endl;
+    }
+    
+    bool bSelfUpdate = iniReader.ReadInteger("MISC", "SelfUpdate", 1) != 0;
+    bool bUpdateUAL = iniReader.ReadInteger("MISC", "UpdateUAL", 1) != 0;
+    bool bAlwaysUpdate = iniReader.ReadInteger("DEBUG", "AlwaysUpdate", 0) != 0;
 
-	std::vector<std::tuple<std::wstring, std::wstring, WIN32_FIND_DATAW>> FilesUpdateData;
-	std::vector<FileUpdateInfo> FilesToUpdate;
-	std::vector<FileUpdateInfo> FilesToDownload;
-	std::set<std::pair<std::string, std::string>> IniExcludes;
+    std::vector<std::tuple<std::wstring, std::wstring, WIN32_FIND_DATAW>> FilesUpdateData;
+    std::vector<FileUpdateInfo> FilesToUpdate;
+    std::vector<FileUpdateInfo> FilesToDownload;
+    std::set<std::pair<std::string, std::string>> IniExcludes;
 
-	auto cb = [&FilesUpdateData, &IniExcludes](std::wstring& s, WIN32_FIND_DATAW& fd)
-	{
-		auto strFileName = s.substr(s.rfind('\\') + 1);
+    auto cb = [&FilesUpdateData, &IniExcludes](std::wstring& s, WIN32_FIND_DATAW& fd)
+    {
+        auto strFileName = s.substr(s.rfind('\\') + 1);
 
-		// Checking file info for url
-		uint32_t dwDummy;
-		uint32_t versionInfoSize = GetFileVersionInfoSizeW(s.c_str(), (LPDWORD)&dwDummy);
+        // Checking file info for url
+        uint32_t dwDummy;
+        uint32_t versionInfoSize = GetFileVersionInfoSizeW(s.c_str(), (LPDWORD)&dwDummy);
 
-		if (versionInfoSize)
-		{
-			std::vector<wchar_t> versionInfoVec(versionInfoSize);
-			GetFileVersionInfoW(s.c_str(), dwDummy, versionInfoSize, versionInfoVec.data());
-			std::wstring versionInfo(versionInfoVec.begin(), versionInfoVec.end());
-			wchar_t* UpdateUrl = UPDATEURL;
-			if (versionInfo.find(UpdateUrl) != std::wstring::npos)
-			{
-				try {
-					versionInfo = versionInfo.substr(versionInfo.find(UpdateUrl) + wcslen(UpdateUrl) + sizeof(wchar_t));
-					versionInfo = versionInfo.substr(0, versionInfo.find_first_of(L'\0'));
-					FilesUpdateData.push_back(std::make_tuple(s, versionInfo, fd));
-					return;
-				}
-				catch (std::out_of_range & ex) {
-					std::wcout << ex.what() << std::endl;
-				}
-			}
-		}
+        if (versionInfoSize)
+        {
+            std::vector<wchar_t> versionInfoVec(versionInfoSize);
+            GetFileVersionInfoW(s.c_str(), dwDummy, versionInfoSize, versionInfoVec.data());
+            std::wstring versionInfo(versionInfoVec.begin(), versionInfoVec.end());
+            wchar_t* UpdateUrl = UPDATEURL;
+            if (versionInfo.find(UpdateUrl) != std::wstring::npos)
+            {
+                try {
+                    versionInfo = versionInfo.substr(versionInfo.find(UpdateUrl) + wcslen(UpdateUrl) + sizeof(wchar_t));
+                    versionInfo = versionInfo.substr(0, versionInfo.find_first_of(L'\0'));
+                    FilesUpdateData.push_back(std::make_tuple(s, versionInfo, fd));
+                    return;
+                }
+                catch (std::out_of_range & ex) {
+                    std::wcout << ex.what() << std::endl;
+                }
+            }
+        }
 
-		//Checking ini file for url
-		auto iniEntry = iniReader.data.get("MODS", toString(strFileName), "");
-		if (!iniEntry.empty())
-		{
-			removeQuotesFromString(iniEntry);
-			FilesUpdateData.push_back(std::make_tuple(s, toWString(iniEntry), fd));
-			return;
-		}
+        //Checking ini file for url
+        auto iniEntry = iniReader.data.get("MODS", toString(strFileName), "");
+        if (!iniEntry.empty())
+        {
+            removeQuotesFromString(iniEntry);
+            FilesUpdateData.push_back(std::make_tuple(s, toWString(iniEntry), fd));
+            return;
+        }
 
-		//Checking if string ends with
-		for (auto& pair : iniReader.data["MODS"])
-		{
-			auto strIni = pair.first;
-			auto iniEntry = pair.second;
-			removeQuotesFromString(iniEntry);
+        //Checking if string ends with
+        for (auto& pair : iniReader.data["MODS"])
+        {
+            auto strIni = pair.first;
+            auto iniEntry = pair.second;
+            removeQuotesFromString(iniEntry);
 
-			auto lcs = GetLongestCommonSubstring(toWString(strIni), strFileName);
-			auto lcs2 = GetLongestCommonSubstring(toWString(iniEntry), strFileName);
+            auto lcs = GetLongestCommonSubstring(toWString(strIni), strFileName);
+            auto lcs2 = GetLongestCommonSubstring(toWString(iniEntry), strFileName);
 
-			if ((lcs.length() > std::string(".asi").length()) || (lcs2.length() >= std::string("skygfx").length()))
-			{
-				if (ends_with(toString(strFileName).c_str(), toString(lcs).c_str(), false))
-				{
-					IniExcludes.insert(std::make_pair(strIni, iniEntry));
-					FilesUpdateData.push_back(std::make_tuple(s, toWString(iniEntry), fd));
-					return;
-				}
-			}
-		}
+            if ((lcs.length() > std::string(".asi").length()) || (lcs2.length() >= std::string("skygfx").length()))
+            {
+                if (ends_with(toString(strFileName).c_str(), toString(lcs).c_str(), false))
+                {
+                    IniExcludes.insert(std::make_pair(strIni, iniEntry));
+                    FilesUpdateData.push_back(std::make_tuple(s, toWString(iniEntry), fd));
+                    return;
+                }
+            }
+        }
 
-		//WFP
-		if (ends_with(toString(strFileName).c_str(), ".WidescreenFix.asi", false))
-			FilesUpdateData.push_back(std::make_tuple(s, std::wstring(L"https://github.com/ThirteenAG/WidescreenFixesPack/releases"), fd));
-	};
+        //WFP
+        if (ends_with(toString(strFileName).c_str(), ".WidescreenFix.asi", false))
+            FilesUpdateData.push_back(std::make_tuple(s, std::wstring(L"https://github.com/ThirteenAG/WidescreenFixesPack/releases"), fd));
+    };
 
-	FindFilesRecursively(modulePath, cb);
+    FindFilesRecursively(modulePath, cb);
 
-	//UAL
-	if (!ualPath.empty())
-	{
-		WIN32_FIND_DATAW fd;
-		FindFirstFileW(ualPath.c_str(), &fd);
-		FilesUpdateData.push_back(std::make_tuple(ualPath, std::wstring(L"https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases"), fd));
-	}
+    //UAL
+    if (!ualPath.empty())
+    {
+        WIN32_FIND_DATAW fd;
+        FindFirstFileW(ualPath.c_str(), &fd);
+        FilesUpdateData.push_back(std::make_tuple(ualPath, std::wstring(L"https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases"), fd));
+    }
 
-	for (auto& tuple : FilesUpdateData)
-	{
-		std::wstring path = std::get<0>(tuple);
-		std::wstring url = std::get<1>(tuple);
-		WIN32_FIND_DATAW fd = std::get<2>(tuple);
-		
-		auto strFileName = path.substr(path.rfind('\\') + 1);
+    for (auto& tuple : FilesUpdateData)
+    {
+        std::wstring path = std::get<0>(tuple);
+        std::wstring url = std::get<1>(tuple);
+        WIN32_FIND_DATAW fd = std::get<2>(tuple);
+        
+        auto strFileName = path.substr(path.rfind('\\') + 1);
 
-		if (!ualPath.empty())
-		{
-			if (!bUpdateUAL && strFileName == ualPath.substr(ualPath.rfind('\\') + 1))
-				continue;
+        if (!ualPath.empty())
+        {
+            if (!bUpdateUAL && strFileName == ualPath.substr(ualPath.rfind('\\') + 1))
+                continue;
 
-			if (!bUpdateUAL && url.find(UALNAME) != std::string::npos)
-				continue;
-		}
-		if (!selfPath.empty())
-		{
-			auto selfName = selfPath.substr(selfPath.rfind('\\') + 1);
-			selfName = selfName.substr(0, selfName.rfind('.') + 1);
-			if (!bSelfUpdate && (strFileName == (selfName + L"asi") || strFileName == (selfName + L"exe")))
-				continue;
-		}
+            if (!bUpdateUAL && url.find(UALNAME) != std::string::npos)
+                continue;
+        }
+        if (!selfPath.empty())
+        {
+            auto selfName = selfPath.substr(selfPath.rfind('\\') + 1);
+            selfName = selfName.substr(0, selfName.rfind('.') + 1);
+            if (!bSelfUpdate && (strFileName == (selfName + L"asi") || strFileName == (selfName + L"exe")))
+                continue;
+        }
 
-		if (strFileName == ualPath.substr(ualPath.rfind('\\') + 1) || url.find(UALNAME) != std::string::npos)
-			strFileName = std::wstring(UALNAME) + L".zip";
+        if (strFileName == ualPath.substr(ualPath.rfind('\\') + 1) || url.find(UALNAME) != std::string::npos)
+            strFileName = std::wstring(UALNAME) + L".zip";
 
-		std::wcout << strFileName << " " << "found." << std::endl;
-		std::wcout << "Update URL:" << " " << url << std::endl;
+        std::wcout << strFileName << " " << "found." << std::endl;
+        std::wcout << "Update URL:" << " " << url << std::endl;
 
-		int32_t nLocaFileUpdatedDaysAgo = GetLocalFileInfo(fd.ftCreationTime, fd.ftLastAccessTime, fd.ftLastWriteTime);
-		auto RemoteInfo = GetRemoteFileInfo(strFileName, url);
-		auto nRemoteFileUpdatedDaysAgo = std::get<0>(RemoteInfo);
-		auto szDownloadURL = std::get<1>(RemoteInfo);
-		auto szDownloadName = std::get<2>(RemoteInfo);
-		auto szFileSize = std::get<3>(RemoteInfo);
+        int32_t nLocaFileUpdatedDaysAgo = GetLocalFileInfo(fd.ftCreationTime, fd.ftLastAccessTime, fd.ftLastWriteTime);
+        auto RemoteInfo = GetRemoteFileInfo(strFileName, url);
+        auto nRemoteFileUpdatedDaysAgo = std::get<0>(RemoteInfo);
+        auto szDownloadURL = std::get<1>(RemoteInfo);
+        auto szDownloadName = std::get<2>(RemoteInfo);
+        auto szFileSize = std::get<3>(RemoteInfo);
 
-		if (nRemoteFileUpdatedDaysAgo != -1 && !szDownloadURL.empty())
-		{
-			if (nRemoteFileUpdatedDaysAgo < nLocaFileUpdatedDaysAgo || bAlwaysUpdate)
-			{
-				auto nFileSize = std::stoi(szFileSize);
-				std::cout << "Download link: " << szDownloadURL << std::endl;
-				std::cout << "Remote file updated " << nRemoteFileUpdatedDaysAgo << " days ago." << std::endl;
-				std::cout << "Local file updated " << nLocaFileUpdatedDaysAgo << " days ago." << std::endl;
-				std::cout << "File size: " << nFileSize << "KB." << std::endl;
-				std::cout << std::endl;
+        if (nRemoteFileUpdatedDaysAgo != -1 && !szDownloadURL.empty())
+        {
+            if (nRemoteFileUpdatedDaysAgo < nLocaFileUpdatedDaysAgo || bAlwaysUpdate)
+            {
+                auto nFileSize = std::stoi(szFileSize);
+                std::cout << "Download link: " << szDownloadURL << std::endl;
+                std::cout << "Remote file updated " << nRemoteFileUpdatedDaysAgo << " days ago." << std::endl;
+                std::cout << "Local file updated " << nLocaFileUpdatedDaysAgo << " days ago." << std::endl;
+                std::cout << "File size: " << nFileSize << "KB." << std::endl;
+                std::cout << std::endl;
 
-				FileUpdateInfo fui;
-				fui.wszFullFilePath = path;
-				fui.wszFileName = strFileName;
-				fui.wszDownloadURL = toWString(szDownloadURL);
-				fui.wszDownloadName = toWString(szDownloadName);
-				fui.nRemoteFileUpdatedDaysAgo = nRemoteFileUpdatedDaysAgo;
-				fui.nLocaFileUpdatedDaysAgo = nLocaFileUpdatedDaysAgo;
-				fui.nFileSize = nFileSize;
+                FileUpdateInfo fui;
+                fui.wszFullFilePath = path;
+                fui.wszFileName = strFileName;
+                fui.wszDownloadURL = toWString(szDownloadURL);
+                fui.wszDownloadName = toWString(szDownloadName);
+                fui.nRemoteFileUpdatedDaysAgo = nRemoteFileUpdatedDaysAgo;
+                fui.nLocaFileUpdatedDaysAgo = nLocaFileUpdatedDaysAgo;
+                fui.nFileSize = nFileSize;
 
-				FilesToUpdate.push_back(fui);
-			}
-			else
-			{
-				std::wcout << L"No updates available." << std::endl;
-				//MessageBox(NULL, "No updates available.", "modupdater", MB_OK | MB_ICONINFORMATION);
-			}
-		}
-		//else
-		//{
-		//	std::wcout << L"Error." << std::endl;
-		//}
-		std::wcout << std::endl;
-	}
+                FilesToUpdate.push_back(fui);
+            }
+            else
+            {
+                std::wcout << L"No updates available." << std::endl;
+                //MessageBox(NULL, "No updates available.", "modupdater", MB_OK | MB_ICONINFORMATION);
+            }
+        }
+        //else
+        //{
+        //	std::wcout << L"Error." << std::endl;
+        //}
+        std::wcout << std::endl;
+    }
 
-	for (auto& pair : iniReader.data["MODS"])
-	{
-		auto strIni = pair.first;
-		auto iniEntry = pair.second;
-		removeQuotesFromString(iniEntry);
+    for (auto& pair : iniReader.data["MODS"])
+    {
+        auto strIni = pair.first;
+        auto iniEntry = pair.second;
+        removeQuotesFromString(iniEntry);
 
-		if (strIni.at(0) == '.')
-			continue;
+        if (strIni.at(0) == '.')
+            continue;
 
-		auto excl = std::find_if(IniExcludes.begin(), IniExcludes.end(),
-			[&strIni, &iniEntry](auto it) { return (it.first == strIni && it.second == iniEntry); });
+        auto excl = std::find_if(IniExcludes.begin(), IniExcludes.end(),
+            [&strIni, &iniEntry](auto it) { return (it.first == strIni && it.second == iniEntry); });
 
-		if (excl != IniExcludes.end())
-			continue;
+        if (excl != IniExcludes.end())
+            continue;
 
-		auto iter = std::find_if(FilesToUpdate.begin(), FilesToUpdate.end(),
-			[&strIni](const FileUpdateInfo& m) -> bool { return m.wszFileName == toWString(strIni); });
+        auto iter = std::find_if(FilesToUpdate.begin(), FilesToUpdate.end(),
+            [&strIni](const FileUpdateInfo& m) -> bool { return m.wszFileName == toWString(strIni); });
 
-		if (iter == FilesToUpdate.end())
-		{
-			auto RemoteInfo = GetRemoteFileInfo(toWString(strIni), toWString(iniEntry));
-			auto nRemoteFileUpdatedDaysAgo = std::get<0>(RemoteInfo);
-			auto szDownloadURL = std::get<1>(RemoteInfo);
-			auto szDownloadName = std::get<2>(RemoteInfo);
-			auto szFileSize = std::get<3>(RemoteInfo);
+        if (iter == FilesToUpdate.end())
+        {
+            auto RemoteInfo = GetRemoteFileInfo(toWString(strIni), toWString(iniEntry));
+            auto nRemoteFileUpdatedDaysAgo = std::get<0>(RemoteInfo);
+            auto szDownloadURL = std::get<1>(RemoteInfo);
+            auto szDownloadName = std::get<2>(RemoteInfo);
+            auto szFileSize = std::get<3>(RemoteInfo);
 
-			if (nRemoteFileUpdatedDaysAgo != -1 && !szDownloadURL.empty())
-			{
-				auto nFileSize = std::stoi(szFileSize);
-				std::cout << "Download link: " << szDownloadURL << std::endl;
-				std::cout << "Remote file updated " << nRemoteFileUpdatedDaysAgo << " days ago." << std::endl;
-				std::cout << "Local file is not present." << std::endl;
-				std::cout << "File size: " << nFileSize << "KB." << std::endl;
-				std::cout << std::endl;
+            if (nRemoteFileUpdatedDaysAgo != -1 && !szDownloadURL.empty())
+            {
+                auto nFileSize = std::stoi(szFileSize);
+                std::cout << "Download link: " << szDownloadURL << std::endl;
+                std::cout << "Remote file updated " << nRemoteFileUpdatedDaysAgo << " days ago." << std::endl;
+                std::cout << "Local file is not present." << std::endl;
+                std::cout << "File size: " << nFileSize << "KB." << std::endl;
+                std::cout << std::endl;
 
-				FileUpdateInfo fui;
-				fui.wszFileName = toWString(strIni);
-				fui.wszFullFilePath = selfPath.substr(0, selfPath.rfind('\\') + 1) + fui.wszFileName;
-				fui.wszDownloadURL = toWString(szDownloadURL);
-				fui.wszDownloadName = toWString(szDownloadName);
-				fui.nRemoteFileUpdatedDaysAgo = nRemoteFileUpdatedDaysAgo;
-				fui.nLocaFileUpdatedDaysAgo = INT_MAX;
-				fui.nFileSize = nFileSize;
+                FileUpdateInfo fui;
+                fui.wszFileName = toWString(strIni);
+                fui.wszFullFilePath = selfPath.substr(0, selfPath.rfind('\\') + 1) + fui.wszFileName;
+                fui.wszDownloadURL = toWString(szDownloadURL);
+                fui.wszDownloadName = toWString(szDownloadName);
+                fui.nRemoteFileUpdatedDaysAgo = nRemoteFileUpdatedDaysAgo;
+                fui.nLocaFileUpdatedDaysAgo = INT_MAX;
+                fui.nFileSize = nFileSize;
 
-				if (fui.wszFullFilePath.find(L"\\modloader\\") != std::string::npos)
-				{
-					auto pos = fui.wszFullFilePath.find_last_of('\\');
-					fui.wszFullFilePath.insert(pos, L"\\" + fui.wszFileName.substr(0, fui.wszFileName.find_last_of(L".")));
-				}
+                if (fui.wszFullFilePath.find(L"\\modloader\\") != std::string::npos)
+                {
+                    auto pos = fui.wszFullFilePath.find_last_of('\\');
+                    fui.wszFullFilePath.insert(pos, L"\\" + fui.wszFileName.substr(0, fui.wszFileName.find_last_of(L".")));
+                }
 
-				FilesToDownload.push_back(fui);
-			}
-		}
-	}
+                FilesToDownload.push_back(fui);
+            }
+        }
+    }
 
-	if (!FilesToUpdate.empty() || !FilesToDownload.empty())
-		ShowUpdateDialog(FilesToUpdate, FilesToDownload);
-	else
-		std::wcout << L"No files found to process." << std::endl;
+    if (!FilesToUpdate.empty() || !FilesToDownload.empty())
+        ShowUpdateDialog(FilesToUpdate, FilesToDownload);
+    else
+        std::wcout << L"No files found to process." << std::endl;
 
-	std::wcout.rdbuf(outbuf);
-	return 0;
+    std::wcout.rdbuf(outbuf);
+    return 0;
 }
 
 void Init()
 {
-	wchar_t buffer[MAX_PATH];
-	HMODULE hm = NULL;
-	if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&Init, &hm))
-		std::wcout << L"GetModuleHandle returned " << GetLastError() << std::endl;
-	GetModuleFileNameW(hm, buffer, sizeof(buffer));
-	selfPath = buffer;
-	modulePath = std::wstring(buffer).substr(0, std::wstring(buffer).rfind('\\') + 1);
-	GetModuleFileNameW(NULL, buffer, sizeof(buffer));
-	processPath = std::wstring(buffer);
+    wchar_t buffer[MAX_PATH];
+    HMODULE hm = NULL;
+    if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&Init, &hm))
+        std::wcout << L"GetModuleHandle returned " << GetLastError() << std::endl;
+    GetModuleFileNameW(hm, buffer, sizeof(buffer));
+    selfPath = buffer;
+    modulePath = std::wstring(buffer).substr(0, std::wstring(buffer).rfind('\\') + 1);
+    GetModuleFileNameW(NULL, buffer, sizeof(buffer));
+    processPath = std::wstring(buffer);
 
-	iniReader.SetIniPath();
+    iniReader.SetIniPath();
 
-	if (iniReader.ReadInteger("MISC", "ScanFromRootFolder", 0) != 0)
-		modulePath = processPath.substr(0, processPath.rfind('\\') + 1);
+    if (iniReader.ReadInteger("MISC", "ScanFromRootFolder", 0) != 0)
+        modulePath = processPath.substr(0, processPath.rfind('\\') + 1);
 
-	if (iniReader.ReadInteger("MISC", "UpdateUAL", 1) != 0)
-	{
-		wchar_t* ualNames[] = { L"d3d8.dll", L"d3d9.dll", L"d3d11.dll", L"winmmbase.dll", L"dinput8.dll", L"dsound.dll", L"ddraw.dll", L"vorbisFile.dll", L"xlive.dll" };
-		hm = NULL;
+    if (iniReader.ReadInteger("MISC", "UpdateUAL", 1) != 0)
+    {
+        wchar_t* ualNames[] = { L"d3d8.dll", L"d3d9.dll", L"d3d11.dll", L"winmmbase.dll", L"dinput8.dll", L"dsound.dll", L"ddraw.dll", L"vorbisFile.dll", L"xlive.dll" };
+        hm = NULL;
 
-		for (auto &it : ualNames)
-		{
-			if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)GetProcAddress(GetModuleHandleW(it), "OpenAdapter10_2"), &hm))
-				std::wcout << it << " " << L"GetModuleHandle returned " << GetLastError() << std::endl;
-			else
-			{
-				GetModuleFileNameW(hm, buffer, sizeof(buffer));
-				ualPath = buffer;
-				break;
-			}
-		}
-	}
+        for (auto &it : ualNames)
+        {
+            if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)GetProcAddress(GetModuleHandleW(it), "OpenAdapter10_2"), &hm))
+                std::wcout << it << " " << L"GetModuleHandle returned " << GetLastError() << std::endl;
+            else
+            {
+                GetModuleFileNameW(hm, buffer, sizeof(buffer));
+                ualPath = buffer;
+                break;
+            }
+        }
+    }
 
-	CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&ProcessFiles, 0, 0, NULL);
+    CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&ProcessFiles, 0, 0, NULL);
 
-	std::getchar();
+    std::getchar();
 }

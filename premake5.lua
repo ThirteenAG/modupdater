@@ -39,12 +39,12 @@ workspace "modupdater"
    links { "libcurl_a.lib" }
    defines { "CURL_STATICLIB" }
    
-	prebuildcommands {
-		"msbuild ../build/libZipper.sln /t:zlibstat /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32",
-		"msbuild ../build/libZipper.sln /t:libZipper-static /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32",
-		"cd ../external/curl/winbuild/",
-		"nmake /f Makefile.vc mode=static RTLIBCFG=static ENABLE_IDN=no"
-	}
+    prebuildcommands {
+        "msbuild ../build/libZipper.sln /t:zlibstat /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32",
+        "msbuild ../build/libZipper.sln /t:libZipper-static /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32",
+        "cd ../external/curl/winbuild/",
+        "nmake /f Makefile.vc mode=static RTLIBCFG=static ENABLE_IDN=no"
+    }
 
 project "UpdaterApp"
    kind "ConsoleApp"
@@ -56,16 +56,16 @@ project "UpdaterApp"
    filter "configurations:Debug"
       defines { "DEBUG" }
       symbols "On"
-	  flags { "StaticRuntime" }
-	  characterset ("MBCS")
+      flags { "StaticRuntime" }
+      characterset ("MBCS")
 
    filter "configurations:Release"
       defines { "NDEBUG" }
       optimize "On"
-	  flags { "StaticRuntime" }
-	  characterset ("MBCS")
-	  
-	  
+      flags { "StaticRuntime" }
+      characterset ("MBCS")
+      
+      
 project "UpdaterPlugin"
    kind "SharedLib"
    language "C++"
@@ -76,17 +76,17 @@ project "UpdaterPlugin"
    filter "configurations:Debug"
       defines { "DEBUG" }
       symbols "On"
-	  flags { "StaticRuntime" }
-	  characterset ("MBCS")
+      flags { "StaticRuntime" }
+      characterset ("MBCS")
 
    filter "configurations:Release"
       defines { "NDEBUG" }
       optimize "On"
-	  flags { "StaticRuntime" }
-	  characterset ("MBCS")
-	  
-	  
-	  
+      flags { "StaticRuntime" }
+      characterset ("MBCS")
+      
+      
+      
 -- libZipper
 workspace "libZipper"
    configurations { "ReleaseWithoutAsm", "Debug" }
@@ -109,14 +109,14 @@ project "zlibstat"
    filter "configurations:Debug"
       defines { "DEBUG" }
       symbols "On"
-	  characterset ("MBCS")
+      characterset ("MBCS")
 
    filter "configurations:ReleaseWithoutAsm"
       defines { "NDEBUG" }
       optimize "On"
-	  flags { "StaticRuntime" }
-	  characterset ("MBCS")
-	  
+      flags { "StaticRuntime" }
+      characterset ("MBCS")
+      
 project "libZipper-static"
    kind "StaticLib"
    language "C++"
@@ -145,10 +145,10 @@ project "libZipper-static"
    filter "configurations:Debug"
       defines { "DEBUG" }
       symbols "On"
-	  characterset ("MBCS")
+      characterset ("MBCS")
 
    filter "configurations:ReleaseWithoutAsm"
       defines { "NDEBUG" }
       optimize "On"
-	  flags { "StaticRuntime" }
-	  characterset ("MBCS")
+      flags { "StaticRuntime" }
+      characterset ("MBCS")
