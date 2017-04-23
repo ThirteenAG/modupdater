@@ -76,7 +76,7 @@ BOOL CheckForFileLock(LPCWSTR pFilePath, bool bReleaseLock = false)
     return bResult;
 }
 
-void FindFilesRecursively(const std::wstring &directory, std::function<void(std::wstring, WIN32_FIND_DATAW)> callback)
+void FindFilesRecursively(const std::wstring &directory, std::function<void(std::wstring, WIN32_FIND_DATAW)> callback, bool cancelRecursion = false)
 {
     std::wstring tmp = directory + L"\\*";
     WIN32_FIND_DATAW file;
@@ -105,8 +105,11 @@ void FindFilesRecursively(const std::wstring &directory, std::function<void(std:
 
         FindClose(search_handle);
 
-        for (std::vector<std::wstring>::iterator iter = directories.begin(), end = directories.end(); iter != end; ++iter)
-            FindFilesRecursively(*iter, callback);
+        if (!cancelRecursion)
+        {
+            for (std::vector<std::wstring>::iterator iter = directories.begin(), end = directories.end(); iter != end; ++iter)
+                FindFilesRecursively(*iter, callback);
+        }
     }
 }
 
@@ -569,7 +572,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
     auto strExtension = strFileName.substr(pos);
     if (pos != std::string::npos)
         strFileName.erase(pos);
-    strFileName.append(L".zip");
+    //strFileName.append(L".zip");
 
     auto szUrl = toString(strUrl);
 
@@ -630,7 +633,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
                             std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
                             std::transform(name.begin(), name.end(), std::back_inserter(str2), ::tolower);
 
-                            if (str1 == str2)
+                            if (((str1 + ".zip") == str2) || ((str1 + toString(strExtension)) == str2))
                             {
                                 std::cout << "Found " << wsFix["assets"][i]["name"] << "on github" << std::endl;
                                 auto szDownloadURL = wsFix["assets"][i]["browser_download_url"].asString();
@@ -642,7 +645,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
                                 sscanf_s(wsFix["assets"][i]["updated_at"].asCString(), "%d-%d-%d%*s", &y, &m, &d);
                                 auto nRemoteFileUpdateTime = date::year(y) / date::month(m) / date::day(d);
                                 auto now = floor<days>(std::chrono::system_clock::now());
-                                return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+                                return std::make_tuple((sys_days{ now } - sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
                             }
                         }
                     }
@@ -676,9 +679,20 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
             }
         }
 
+        strFileName.append(toWString(szUrl.substr(szUrl.find_last_of('.'))));
+
         std::cout << "Connecting to " << szUrl << std::endl;
 
         auto rHead = cpr::Head(cpr::Url{ szUrl });
+
+        if (rHead.status_code == 405) // method not allowed
+        {
+            auto r = cpr::Get(cpr::Url{ szUrl });
+            if (r.status_code == 200)
+            {
+                rHead = r;
+            }
+        }
 
         if (rHead.status_code == 200)
         {
@@ -696,7 +710,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
             using namespace date;
             auto nRemoteFileUpdateTime = date::year(t.tm_year + 1900) / date::month(t.tm_mon + 1) / date::day(t.tm_mday);
             auto now = floor<days>(std::chrono::system_clock::now());
-            return std::make_tuple((sys_days{ now } -sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
+            return std::make_tuple((sys_days{ now } - sys_days{ nRemoteFileUpdateTime }).count(), szDownloadURL, szDownloadName, szFileSize);
         }
         else
             std::wcout << L"Seems like this archive doesn't contain " << strFileName.substr(0, strFileName.find_last_of(L".")) << strExtension << std::endl;
@@ -712,7 +726,7 @@ int32_t GetLocalFileInfo(FILETIME ftCreate, FILETIME ftLastAccess, FILETIME ftLa
     FileTimeToSystemTime(&ftLastWrite, &stUTC);
     auto nLocalFileUpdateTime = date::year(stUTC.wYear) / date::month(stUTC.wMonth) / date::day(stUTC.wDay);
     auto now = floor<days>(std::chrono::system_clock::now());
-    return (sys_days{ now } -sys_days{ nLocalFileUpdateTime }).count();
+    return (sys_days{ now } - sys_days{ nLocalFileUpdateTime }).count();
 }
 
 DWORD WINAPI ProcessFiles(LPVOID)
@@ -739,6 +753,15 @@ DWORD WINAPI ProcessFiles(LPVOID)
     {
         auto strFileName = s.substr(s.rfind('\\') + 1);
 
+        //Checking ini file for url
+        auto iniEntry = iniReader.data.get("MODS", toString(strFileName), "");
+        if (!iniEntry.empty())
+        {
+            removeQuotesFromString(iniEntry);
+            FilesUpdateData.push_back(std::make_tuple(s, toWString(iniEntry), fd));
+            return;
+        }
+
         // Checking file info for url
         uint32_t dwDummy;
         uint32_t versionInfoSize = GetFileVersionInfoSizeW(s.c_str(), (LPDWORD)&dwDummy);
@@ -761,15 +784,6 @@ DWORD WINAPI ProcessFiles(LPVOID)
                     std::wcout << ex.what() << std::endl;
                 }
             }
-        }
-
-        //Checking ini file for url
-        auto iniEntry = iniReader.data.get("MODS", toString(strFileName), "");
-        if (!iniEntry.empty())
-        {
-            removeQuotesFromString(iniEntry);
-            FilesUpdateData.push_back(std::make_tuple(s, toWString(iniEntry), fd));
-            return;
         }
 
         //Checking if string ends with
@@ -799,6 +813,12 @@ DWORD WINAPI ProcessFiles(LPVOID)
     };
 
     FindFilesRecursively(modulePath, cb);
+
+    if (iniReader.ReadInteger("MISC", "ScanFromRootFolder", 0) == 0)
+    {
+        if (modulePath != processPath.substr(0, processPath.rfind('\\') + 1))
+            FindFilesRecursively(processPath.substr(0, processPath.rfind('\\') + 1), cb, true);
+    }
 
     //UAL
     if (!ualPath.empty())
