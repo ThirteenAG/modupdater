@@ -255,7 +255,7 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
 
                         if (bPlaceToRoot)
                         {
-                            fullPath = modulePath + (ualName.empty() ? itFileName : ualName);
+                            fullPath = processPath.substr(0, processPath.rfind('\\') + 1) + (ualName.empty() ? itFileName : ualName);
                             if (!ualName.empty())
                                 ualName.clear();
                         }
