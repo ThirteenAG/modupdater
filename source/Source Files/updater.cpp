@@ -643,7 +643,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 
         szUrl = "https://api.github.com" + repos + user + "/" + repo + "/releases" + "?access_token=" GHTOKEN; // "&per_page=100";
 
-        std::cout << "Connecting to GitHub: " << szUrl << std::endl;
+        std::wcout << L"Connecting to GitHub: " << toWString(szUrl) << std::endl;
 
         auto rLink = cpr::Head(cpr::Url{ szUrl });
 
@@ -669,7 +669,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 
                 if (parsingSuccessful)
                 {
-                    std::cout << "GitHub's response parsed successfully." << " Page " << i << "." << std::endl;
+                    std::wcout << L"GitHub's response parsed successfully." << L" Page " << i << "." << std::endl;
 
                     for (Json::ValueConstIterator it = parsedFromString.begin(); it != parsedFromString.end(); ++it)
                     {
@@ -685,7 +685,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 
                             if (((str1 + ".zip") == str2) || ((str1 + toString(strExtension)) == str2) || (szUrl.find(name.substr(0, name.find('.'))) != std::string::npos))
                             {
-                                std::cout << "Found " << wsFix["assets"][i]["name"] << "on github" << std::endl;
+                                std::wcout << L"Found " << toWString((wsFix["assets"][i]["name"]).asString()) << L" on GitHub." << std::endl;
                                 auto szDownloadURL = wsFix["assets"][i]["browser_download_url"].asString();
                                 auto szDownloadName = wsFix["assets"][i]["name"].asString();
                                 auto szFileSize = wsFix["assets"][i]["size"].asString();
@@ -703,10 +703,10 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
             }
             else
             {
-                std::cout << "Something wrong! " << "Status code: " << r.status_code << std::endl;
+                std::wcout << L"Something wrong! " << L"Status code: " << r.status_code << std::endl;
             }
         }
-        std::cout << "Nothing is found on GitHub." << std::endl << std::endl;
+        std::wcout << L"Nothing is found on GitHub." << std::endl << std::endl;
     }
     else
     {
@@ -731,7 +731,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 
         strFileName.append(toWString(szUrl.substr(szUrl.find_last_of('.'))));
 
-        std::cout << "Connecting to " << szUrl << std::endl;
+        std::wcout << "Connecting to " << toWString(szUrl) << std::endl;
 
         auto rHead = cpr::Head(cpr::Url{ szUrl });
 
@@ -746,7 +746,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
 
         if (rHead.status_code == 200)
         {
-            std::cout << "Found " << rHead.header["Content-Type"] << std::endl;
+            std::wcout << "Found " << toWString(rHead.header["Content-Type"]) << std::endl;
             std::string szDownloadURL = rHead.url.c_str();
             std::string tempStr = szDownloadURL.substr(szDownloadURL.find_last_of('/') + 1);
             auto endPos = tempStr.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890_.");
@@ -791,12 +791,12 @@ DWORD WINAPI ProcessFiles(LPVOID)
     }
     
     bool bSelfUpdate = iniReader.ReadInteger("MISC", "SelfUpdate", 1) != 0;
-    bool bUpdateUAL = iniReader.ReadInteger("MISC", "UpdateUAL", 1) != 0;
     bool bAlwaysUpdate = iniReader.ReadInteger("DEBUG", "AlwaysUpdate", 0) != 0;
 
     std::vector<std::tuple<std::wstring, std::wstring, WIN32_FIND_DATAW>> FilesUpdateData;
     std::vector<FileUpdateInfo> FilesToUpdate;
     std::vector<FileUpdateInfo> FilesToDownload;
+    std::vector<std::wstring> FilesPresent;
     std::set<std::pair<std::string, std::string>> IniExcludes;
 
     auto cb = [&FilesUpdateData, &IniExcludes](std::wstring& s, WIN32_FIND_DATAW& fd)
@@ -895,17 +895,18 @@ DWORD WINAPI ProcessFiles(LPVOID)
         auto szDownloadURL = std::get<1>(RemoteInfo);
         auto szDownloadName = std::get<2>(RemoteInfo);
         auto szFileSize = std::get<3>(RemoteInfo);
+        FilesPresent.push_back(strFileName);
 
         if (nRemoteFileUpdatedDaysAgo != -1 && !szDownloadURL.empty())
         {
             if (nRemoteFileUpdatedDaysAgo < nLocaFileUpdatedDaysAgo || bAlwaysUpdate)
             {
                 auto nFileSize = std::stoi(szFileSize);
-                std::cout << "Download link: " << szDownloadURL << std::endl;
-                std::cout << "Remote file updated " << nRemoteFileUpdatedDaysAgo << " days ago." << std::endl;
-                std::cout << "Local file updated " << nLocaFileUpdatedDaysAgo << " days ago." << std::endl;
-                std::cout << "File size: " << nFileSize << "KB." << std::endl;
-                std::cout << std::endl;
+                std::wcout << "Download link: " << toWString(szDownloadURL) << std::endl;
+                std::wcout << "Remote file updated " << nRemoteFileUpdatedDaysAgo << " days ago." << std::endl;
+                std::wcout << "Local file updated " << nLocaFileUpdatedDaysAgo << " days ago." << std::endl;
+                std::wcout << "File size: " << nFileSize << "KB." << std::endl;
+                std::wcout << std::endl;
 
                 FileUpdateInfo fui;
                 fui.wszFullFilePath = path;
@@ -946,10 +947,10 @@ DWORD WINAPI ProcessFiles(LPVOID)
         if (excl != IniExcludes.end())
             continue;
 
-        auto iter = std::find_if(FilesToUpdate.begin(), FilesToUpdate.end(),
-            [&strIni](const FileUpdateInfo& m) -> bool { return m.wszFileName == toWString(strIni); });
+        auto iter = std::find_if(FilesPresent.begin(), FilesPresent.end(),
+            [&strIni](const std::wstring& wszFileName) -> bool { return wszFileName == toWString(strIni); });
 
-        if (iter == FilesToUpdate.end())
+        if (iter == FilesPresent.end())
         {
             auto RemoteInfo = GetRemoteFileInfo(toWString(strIni), toWString(iniEntry));
             auto nRemoteFileUpdatedDaysAgo = std::get<0>(RemoteInfo);
@@ -960,11 +961,11 @@ DWORD WINAPI ProcessFiles(LPVOID)
             if (nRemoteFileUpdatedDaysAgo != -1 && !szDownloadURL.empty())
             {
                 auto nFileSize = std::stoi(szFileSize);
-                std::cout << "Download link: " << szDownloadURL << std::endl;
-                std::cout << "Remote file updated " << nRemoteFileUpdatedDaysAgo << " days ago." << std::endl;
-                std::cout << "Local file is not present." << std::endl;
-                std::cout << "File size: " << nFileSize << "KB." << std::endl;
-                std::cout << std::endl;
+                std::wcout << L"Download link: " << toWString(szDownloadURL) << std::endl;
+                std::wcout << L"Remote file updated " << nRemoteFileUpdatedDaysAgo << " days ago." << std::endl;
+                std::wcout << L"Local file is not present." << std::endl;
+                std::wcout << L"File size: " << nFileSize << "KB." << std::endl;
+                std::wcout << std::endl;
 
                 FileUpdateInfo fui;
                 fui.wszFileName = toWString(strIni);
@@ -982,6 +983,11 @@ DWORD WINAPI ProcessFiles(LPVOID)
                 }
 
                 FilesToDownload.push_back(fui);
+            }
+            else
+            {
+                std::wcout << L"No updates available." << std::endl;
+                //MessageBox(NULL, "No updates available.", "modupdater", MB_OK | MB_ICONINFORMATION);
             }
         }
     }
