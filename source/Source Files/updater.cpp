@@ -14,14 +14,14 @@ struct FileUpdateInfo
 
 CIniReader iniReader;
 HWND MainHwnd, DialogHwnd;
-std::wstring modulePath, processPath, ualPath, selfPath;
+std::wstring modulePath, processPath, selfPath;
 std::wstring messagesBuffer;
 std::wofstream logFile;
 std::wstreambuf* outbuf;
 
 #define UPDATEURL L"UpdateUrl"
 #define GHTOKEN "63c1f1cc5782c8f1dafad05448e308f0cf8c9198"
-#define UALNAME L"Ultimate-ASI-Loader"
+#define UALNAME L"Ultimate-ASI-Loader.zip"
 #define BUTTONID1 1001
 #define BUTTONID2 1002
 #define BUTTONID3 1003
@@ -115,12 +115,6 @@ void FindFilesRecursively(const std::wstring &directory, std::function<void(std:
 
 void CleanupLockedFiles()
 {
-    if (!ualPath.empty())
-    {
-        auto ualdel = ualPath + L".deleteonnextlaunch";
-        DeleteFileW(ualdel.c_str());
-    }
-
     auto cb = [](std::wstring &s, WIN32_FIND_DATAW)
     {
         static std::wstring const targetExtension(L".deleteonnextlaunch");
@@ -131,6 +125,11 @@ void CleanupLockedFiles()
         }
     };
 
+    if (iniReader.ReadInteger("MISC", "ScanFromRootFolder", 0) == 0)
+    {
+        if (modulePath != processPath.substr(0, processPath.rfind('\\') + 1))
+            FindFilesRecursively(processPath.substr(0, processPath.rfind('\\') + 1), cb, true);
+    }
     FindFilesRecursively(modulePath, cb);
 }
 
@@ -138,6 +137,13 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
 {
     messagesBuffer = L"Downloading " + wszDownloadName;
     std::wcout << messagesBuffer << std::endl;
+
+    std::wstring ualName;
+    if (wszDownloadName == UALNAME)
+    {
+        ualName = wzsFileName;
+        wzsFileName = L"dinput8.dll";
+    }
 
     cpr::Response r;
 
@@ -162,6 +168,35 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
         std::vector<uint8_t> buffer(r.text.begin(), r.text.end());
         messagesBuffer = L"Download complete.";
         std::wcout << messagesBuffer << std::endl;
+
+        if (wszDownloadName.substr(wszDownloadName.find_last_of('.')) != L".zip")
+        {
+            messagesBuffer = L"Processing " + wszDownloadName;
+            std::wcout << messagesBuffer << std::endl;
+
+            std::wstring fullPath = wszFullFilePath.substr(0, wszFullFilePath.find_last_of('\\') + 1) + wzsFileName;
+
+            if (CheckForFileLock(fullPath.c_str()) == FALSE)
+            {
+                std::wcout << wszDownloadName << L" is locked. Renaming..." << std::endl;
+                if (MoveFileW(_T(fullPath.c_str()), _T(std::wstring(fullPath + L".deleteonnextlaunch").c_str())))
+                    std::wcout << wszDownloadName << L" was renamed to " << fullPath + L".deleteonnextlaunch" << std::endl;
+                else
+                    std::wcout << L"Error: " << GetLastError() << std::endl;
+            }
+            else
+            {
+                std::wcout << wszDownloadName << L" is not locked." << std::endl;
+            }
+
+            std::ofstream outputFile(fullPath, std::ios::binary);
+            outputFile.write((const char*)&buffer[0], buffer.size());
+            outputFile.close();
+
+            messagesBuffer = wzsFileName + L" was updated succesfully.";
+            std::wcout << messagesBuffer << std::endl;
+            return;
+        }
 
         using namespace zipper;
         Unzipper unzipper(buffer);
@@ -211,9 +246,21 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
                         if (wszFullFilePath.find(L"modloader\\modloader.asi") != std::string::npos && itFileName.find(L"modloader\\") != std::string::npos)
                             itFileName.erase(0, std::wstring(L"modloader\\").length());
 
-                        std::wstring fullPath = wszFullFilePath.substr(0, wszFullFilePath.find_last_of('\\') + 1) + itFileName;
-                        std::string fullPathStr = toString(fullPath);
+                        auto bExtractSingleFile = iniReader.data.get(toString(lowcsItFileName), "ExtractSingleFile", ":)").empty();
+                        auto bPlaceToRoot = iniReader.data.get(toString(lowcsItFileName), "PlaceToRoot", ":)").empty();
+                        if (!ualName.empty())
+                            bPlaceToRoot = true;
 
+                        std::wstring fullPath = wszFullFilePath.substr(0, wszFullFilePath.find_last_of('\\') + 1) + itFileName;
+
+                        if (bPlaceToRoot)
+                        {
+                            fullPath = modulePath + (ualName.empty() ? itFileName : ualName);
+                            if (!ualName.empty())
+                                ualName.clear();
+                        }
+
+                        std::string fullPathStr = toString(fullPath);
                         if (CheckForFileLock(fullPath.c_str()) == FALSE)
                         {
                             std::wcout << itFileName << L" is locked. Renaming..." << std::endl;
@@ -324,6 +371,9 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
 
                         messagesBuffer = itFileName + L" was updated succesfully.";
                         std::wcout << messagesBuffer << std::endl;
+
+                        if (bExtractSingleFile)
+                            return;
                     }
                 }
             }
@@ -633,7 +683,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
                             std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
                             std::transform(name.begin(), name.end(), std::back_inserter(str2), ::tolower);
 
-                            if (((str1 + ".zip") == str2) || ((str1 + toString(strExtension)) == str2))
+                            if (((str1 + ".zip") == str2) || ((str1 + toString(strExtension)) == str2) || (szUrl.find(name.substr(0, name.find('.'))) != std::string::npos))
                             {
                                 std::cout << "Found " << wsFix["assets"][i]["name"] << "on github" << std::endl;
                                 auto szDownloadURL = wsFix["assets"][i]["browser_download_url"].asString();
@@ -820,14 +870,6 @@ DWORD WINAPI ProcessFiles(LPVOID)
             FindFilesRecursively(processPath.substr(0, processPath.rfind('\\') + 1), cb, true);
     }
 
-    //UAL
-    if (!ualPath.empty())
-    {
-        WIN32_FIND_DATAW fd;
-        FindFirstFileW(ualPath.c_str(), &fd);
-        FilesUpdateData.push_back(std::make_tuple(ualPath, std::wstring(L"https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases"), fd));
-    }
-
     for (auto& tuple : FilesUpdateData)
     {
         std::wstring path = std::get<0>(tuple);
@@ -836,14 +878,6 @@ DWORD WINAPI ProcessFiles(LPVOID)
         
         auto strFileName = path.substr(path.rfind('\\') + 1);
 
-        if (!ualPath.empty())
-        {
-            if (!bUpdateUAL && strFileName == ualPath.substr(ualPath.rfind('\\') + 1))
-                continue;
-
-            if (!bUpdateUAL && url.find(UALNAME) != std::string::npos)
-                continue;
-        }
         if (!selfPath.empty())
         {
             auto selfName = selfPath.substr(selfPath.rfind('\\') + 1);
@@ -851,9 +885,6 @@ DWORD WINAPI ProcessFiles(LPVOID)
             if (!bSelfUpdate && (strFileName == (selfName + L"asi") || strFileName == (selfName + L"exe")))
                 continue;
         }
-
-        if (strFileName == ualPath.substr(ualPath.rfind('\\') + 1) || url.find(UALNAME) != std::string::npos)
-            strFileName = std::wstring(UALNAME) + L".zip";
 
         std::wcout << strFileName << " " << "found." << std::endl;
         std::wcout << "Update URL:" << " " << url << std::endl;
@@ -980,24 +1011,6 @@ void Init()
 
     if (iniReader.ReadInteger("MISC", "ScanFromRootFolder", 0) != 0)
         modulePath = processPath.substr(0, processPath.rfind('\\') + 1);
-
-    if (iniReader.ReadInteger("MISC", "UpdateUAL", 1) != 0)
-    {
-        wchar_t* ualNames[] = { L"d3d8.dll", L"d3d9.dll", L"d3d11.dll", L"winmmbase.dll", L"dinput8.dll", L"dsound.dll", L"ddraw.dll", L"vorbisFile.dll", L"xlive.dll" };
-        hm = NULL;
-
-        for (auto &it : ualNames)
-        {
-            if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)GetProcAddress(GetModuleHandleW(it), "OpenAdapter10_2"), &hm))
-                std::wcout << it << " " << L"GetModuleHandle returned " << GetLastError() << std::endl;
-            else
-            {
-                GetModuleFileNameW(hm, buffer, sizeof(buffer));
-                ualPath = buffer;
-                break;
-            }
-        }
-    }
 
     CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&ProcessFiles, 0, 0, NULL);
 
