@@ -713,20 +713,8 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
         if (szUrl.find("node-js-geturl") != std::string::npos)
         {
             auto r = cpr::Get(cpr::Url{ szUrl });
-
             if (!r.text.empty())
-            {
-                if (r.text.at(0) == '.' || r.text.at(0) == '/')
-                {
-                    auto sstr1 = std::string("?url=(");
-                    auto sstr2 = szUrl.rfind(sstr1) + sstr1.length();
-                    szUrl = szUrl.substr(sstr2);
-                    szUrl = szUrl.substr(0, find_nth(szUrl, 0, std::string("/"), 2));
-                    szUrl += r.text.substr(r.text.find_first_of('/'));
-                }
-                else
-                    szUrl = r.text;
-            }
+                szUrl = r.text;
         }
 
         strFileName.append(toWString(szUrl.substr(szUrl.find_last_of('.'))));
@@ -802,6 +790,9 @@ DWORD WINAPI ProcessFiles(LPVOID)
     auto cb = [&FilesUpdateData, &IniExcludes](std::wstring& s, WIN32_FIND_DATAW& fd)
     {
         auto strFileName = s.substr(s.rfind('\\') + 1);
+
+        if (strFileName.find(L".deleteonnextlaunch") != std::string::npos)
+            return;
 
         //Checking ini file for url
         auto iniEntry = iniReader.data.get("MODS", toString(strFileName), "");
