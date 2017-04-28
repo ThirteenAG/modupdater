@@ -22,7 +22,7 @@ workspace "modupdater"
    
    includedirs { "source/Header Files/" }
    includedirs { "external/inireader" }
-   includedirs { "external/curl/builds/libcurl-vc14-x86-release-static-ipv6-sspi-winssl/include" }
+   includedirs { "external/curl/builds/libcurl-vc-x86-release-static-ipv6-sspi-winssl/include" }
    includedirs { "external/cpr/include" }
    includedirs { "external/date" }
    includedirs { "external/jsoncpp/include" }
@@ -31,7 +31,7 @@ workspace "modupdater"
    includedirs { "external/zlib" }
    
    libdirs { "source/Includes/Libs" }
-   libdirs { "external/curl/builds/libcurl-vc14-x86-release-static-ipv6-sspi-winssl/lib" }
+   libdirs { "external/curl/builds/libcurl-vc-x86-release-static-ipv6-sspi-winssl/lib" }
    
    links { "version.lib" }
    links { "zlibstat.lib" }

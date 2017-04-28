@@ -19,14 +19,19 @@ std::wstring messagesBuffer;
 std::wofstream logFile;
 std::wstreambuf* outbuf;
 
+#define EXTRACTSINGLEFILE "ExtractSingleFile"
+#define PLACETOROOT       "PlaceToRoot"
+#define IGNOREUPDATES     "IgnoreUpdates"
+#define CUSTOMPATH        "CustomPath"
+
 #define UPDATEURL L"UpdateUrl"
-#define GHTOKEN "63c1f1cc5782c8f1dafad05448e308f0cf8c9198"
-#define UALNAME L"Ultimate-ASI-Loader.zip"
-#define BUTTONID1 1001
-#define BUTTONID2 1002
-#define BUTTONID3 1003
-#define BUTTONID4 1004
-#define BUTTONID5 1005
+#define GHTOKEN    "63c1f1cc5782c8f1dafad05448e308f0cf8c9198"
+#define UALNAME   L"Ultimate-ASI-Loader.zip"
+#define BUTTONID1  1001
+#define BUTTONID2  1002
+#define BUTTONID3  1003
+#define BUTTONID4  1004
+#define BUTTONID5  1005
 #define RBUTTONID1 1011
 #define RBUTTONID2 1012
 #define RBUTTONID3 1013
@@ -145,6 +150,11 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
         wzsFileName = L"dinput8.dll";
     }
 
+    std::string cusPath;
+    auto iniData = iniReader.data[toString(wzsFileName)];
+    if (iniData.find(CUSTOMPATH) != iniData.end() && bCreateDirectories) //bCreateDirectories - if downloading files, not updating
+        cusPath = "\\" + iniData[CUSTOMPATH] + "\\";
+
     cpr::Response r;
 
     auto itr = std::find_if(downloads.begin(), downloads.end(), [&wszDownloadURL](std::pair<std::wstring, std::string> const& wstr)
@@ -188,6 +198,8 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
             {
                 std::wcout << wszDownloadName << L" is not locked." << std::endl;
             }
+
+            createFolder(fullPath.substr(0, fullPath.find_last_of('\\')));
 
             std::ofstream outputFile(fullPath, std::ios::binary);
             outputFile.write((const char*)&buffer[0], buffer.size());
@@ -246,19 +258,16 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
                         if (wszFullFilePath.find(L"modloader\\modloader.asi") != std::string::npos && itFileName.find(L"modloader\\") != std::string::npos)
                             itFileName.erase(0, std::wstring(L"modloader\\").length());
 
-                        auto bExtractSingleFile = iniReader.data.get(toString(lowcsItFileName), "ExtractSingleFile", ":)").empty();
-                        auto bPlaceToRoot = iniReader.data.get(toString(lowcsItFileName), "PlaceToRoot", ":)").empty();
-                        if (!ualName.empty())
-                            bPlaceToRoot = true;
+                        std::wstring fullPath = wszFullFilePath.substr(0, wszFullFilePath.find_last_of('\\') + 1) + toWString(cusPath) + itFileName;
 
-                        std::wstring fullPath = wszFullFilePath.substr(0, wszFullFilePath.find_last_of('\\') + 1) + itFileName;
+                        auto bExtractSingleFile = iniData.find(EXTRACTSINGLEFILE) != iniData.end();
+                        auto bPlaceToRoot = iniData.find(PLACETOROOT) != iniData.end();
 
-                        if (bPlaceToRoot)
-                        {
+                        if (bPlaceToRoot || !ualName.empty())
                             fullPath = processPath.substr(0, processPath.rfind('\\') + 1) + (ualName.empty() ? itFileName : ualName);
-                            if (!ualName.empty())
-                                ualName.clear();
-                        }
+
+                        if (!ualName.empty())
+                            ualName.clear();
 
                         std::string fullPathStr = toString(fullPath);
                         if (CheckForFileLock(fullPath.c_str()) == FALSE)
@@ -373,7 +382,10 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
                         std::wcout << messagesBuffer << std::endl;
 
                         if (bExtractSingleFile)
+                        {
+                            unzipper.close();
                             return;
+                        }
                     }
                 }
             }
@@ -619,10 +631,14 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
 std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std::wstring strFileName, std::wstring strUrl)
 {
     auto pos = strFileName.find_last_of('.');
-    auto strExtension = strFileName.substr(pos);
+    std::wstring strExtension;
     if (pos != std::string::npos)
+    {
+        strExtension = strFileName.substr(pos);
         strFileName.erase(pos);
-    //strFileName.append(L".zip");
+    }
+    else
+        strFileName.append(L".asi");
 
     auto szUrl = toString(strUrl);
 
@@ -794,6 +810,13 @@ DWORD WINAPI ProcessFiles(LPVOID)
         if (strFileName.find(L".deleteonnextlaunch") != std::string::npos)
             return;
 
+        auto iniData = iniReader.data[toString(strFileName)];
+        if (iniData.find(IGNOREUPDATES) != iniData.end())
+        {
+            std::wcout << strFileName << L" is ignored." << std::endl;
+            return;
+        }
+
         //Checking ini file for url
         auto iniEntry = iniReader.data.get("MODS", toString(strFileName), "");
         if (!iniEntry.empty())
@@ -929,6 +952,13 @@ DWORD WINAPI ProcessFiles(LPVOID)
         auto iniEntry = pair.second;
         removeQuotesFromString(iniEntry);
 
+        auto iniData = iniReader.data[strIni];
+        if (iniData.find(IGNOREUPDATES) != iniData.end())
+        {
+            std::wcout << toWString(strIni) << L" is ignored." << std::endl;
+            continue;
+        }
+
         if (strIni.at(0) == '.')
             continue;
 
@@ -967,7 +997,7 @@ DWORD WINAPI ProcessFiles(LPVOID)
                 fui.nLocaFileUpdatedDaysAgo = INT_MAX;
                 fui.nFileSize = nFileSize;
 
-                if (fui.wszFullFilePath.find(L"\\modloader\\") != std::string::npos)
+                if (fui.wszFullFilePath.find(L"\\modloader\\") != std::string::npos && fui.wszFullFilePath.find(L"modloader\\modloader.asi") == std::string::npos)
                 {
                     auto pos = fui.wszFullFilePath.find_last_of('\\');
                     fui.wszFullFilePath.insert(pos, L"\\" + fui.wszFileName.substr(0, fui.wszFileName.find_last_of(L".")));
@@ -1003,6 +1033,15 @@ void Init()
     modulePath = std::wstring(buffer).substr(0, std::wstring(buffer).rfind('\\') + 1);
     GetModuleFileNameW(NULL, buffer, sizeof(buffer));
     processPath = std::wstring(buffer);
+
+    if (selfPath == processPath)
+    {
+        auto p = processPath.substr(0, processPath.rfind('\\') + 1) + L"..\\";
+        if (std::experimental::filesystem::exists(p + L"gta_sa.exe") || std::experimental::filesystem::exists(p + L"gta-sa.exe"))
+        {
+            processPath = p;
+        }
+    }
 
     iniReader.SetIniPath();
 
