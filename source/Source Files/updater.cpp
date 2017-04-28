@@ -1037,7 +1037,9 @@ void Init()
     if (selfPath == processPath)
     {
         auto p = processPath.substr(0, processPath.rfind('\\') + 1) + L"..\\";
-        if (std::experimental::filesystem::exists(p + L"gta_sa.exe") || std::experimental::filesystem::exists(p + L"gta-sa.exe"))
+        if (std::experimental::filesystem::exists(p + L"gta_sa.exe") || std::experimental::filesystem::exists(p + L"gta-sa.exe") || 
+            std::experimental::filesystem::exists(p + L"gta_vc.exe") || std::experimental::filesystem::exists(p + L"gta-vc.exe") ||
+            std::experimental::filesystem::exists(p + L"gta3.exe"))
         {
             processPath = p;
         }
