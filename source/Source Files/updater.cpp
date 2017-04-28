@@ -860,7 +860,7 @@ DWORD WINAPI ProcessFiles(LPVOID)
             auto lcs = GetLongestCommonSubstring(toWString(strIni), strFileName);
             auto lcs2 = GetLongestCommonSubstring(toWString(iniEntry), strFileName);
 
-            if ((lcs.length() > std::string(".asi").length()) || (lcs2.length() >= std::string("skygfx").length()))
+            if ((lcs.length() > std::string("???.asi").length()) || (lcs2.length() >= std::string("skygfx").length()))
             {
                 if (ends_with(toString(strFileName).c_str(), toString(lcs).c_str(), false))
                 {
