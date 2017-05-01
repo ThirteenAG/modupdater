@@ -1,0 +1,25 @@
+version: 2.{build}
+skip_tags: true
+image: Visual Studio 2017
+configuration: Release
+install:
+- cmd: >-
+    git submodule update --init --recursive
+
+    premake5.bat
+build:
+  project: build/modupdater.sln
+  verbosity: minimal
+after_build:
+- cmd: 7z a modupdater.zip %APPVEYOR_BUILD_FOLDER%\bin\Release\modupdater.asi %APPVEYOR_BUILD_FOLDER%\bin\Release\modupdater.exe %APPVEYOR_BUILD_FOLDER%\inisamples\default\modupdater.ini
+artifacts:
+- path: modupdater.zip
+  name: modupdater.zip
+deploy:
+- provider: GitHub
+  tag: v$(appveyor_build_version)
+  release: modupdater v$(appveyor_build_version)
+  description: 'Readme: https://github.com/ThirteenAG/modupdater#readme'
+  auth_token:
+    secure: SXMI7bm5RKh5j1S8A8dnUP2HFw97xHHlJH+mA0hx819vtxOPCpMFY3aFZ+2v16ri
+  artifact: modupdater.zip
