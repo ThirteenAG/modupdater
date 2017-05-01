@@ -39,7 +39,7 @@ By default updater can work without ini file, it's preconfigured to only update 
 Here's a list of options you can set:
 
     [MODS]
-    File names and update URLs, fore example:
+    File names and update URLs, for example:
     GTA3.WidescreenFix.asi = https://github.com/ThirteenAG/WidescreenFixesPack/
     
     [MISC]
