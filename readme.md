@@ -53,20 +53,18 @@ Here's a list of options you can set:
     AlwaysUpdate              <-- 1 or 0
 
 
->**[MODS]**
-**NameRegExp**. It should contain a regular expression, by default it's **`".*\\.WidescreenFix"`**. Set it to **`".*"`** to scan all files or to something else.
+**[MISC]**
 
->**[MISC]**
->**SelfUpdate**. Updater will update itself.
+**SelfUpdate**. Updater will update itself.
 
 **ScanFromRootFolder**. You can place **modupdater.asi** in any folder, like scripts, modloader's subfolder etc. With this option set to **1**, updater will start searching for files from the folder where the game's exe located. This will not work if you run **modupdater.exe**.
 
->**SkipUpdateCompleteDialog**. Skips this dialog window(but doesn't do restart):
-![](http://i.imgur.com/mM30zCH.png)
+**SkipUpdateCompleteDialog**. Skips [this](http://i.imgur.com/mM30zCH.png) dialog window(but doesn't do restart).
 
->**OutputLogToFile**. Simply creates a log file and writes all messages to it.
+**OutputLogToFile**. Simply creates a log file and writes all messages to it.
 
->**[DEBUG]**
+**[DEBUG]**
+
 **AlwaysUpdate**. For testing purposes, update dialog will be shown even if there's no updates available. 
 
 See ini example [here](https://github.com/ThirteenAG/modupdater/tree/master/inisamples).
