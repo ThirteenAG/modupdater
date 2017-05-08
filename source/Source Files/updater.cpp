@@ -144,7 +144,7 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
     std::wcout << messagesBuffer << std::endl;
 
     std::wstring ualName;
-    if (toLowerWStr(wszDownloadName) == toLowerWStr(UALNAME))
+    if (toLowerWStr(wszDownloadName) == toLowerWStr(std::wstring(UALNAME)))
     {
         ualName = wzsFileName;
         wzsFileName = L"dinput8.dll";
