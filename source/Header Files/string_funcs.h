@@ -1,5 +1,21 @@
 #include <string>
 
+template<typename T>
+std::wstring toLowerWStr(T& arg)
+{
+    std::wstring ret;
+    std::transform(arg.begin(), arg.end(), std::back_inserter(ret), ::tolower);
+    return ret;
+}
+
+template<typename T>
+std::string toLowerStr(T& arg)
+{
+    std::string ret;
+    std::transform(arg.begin(), arg.end(), std::back_inserter(ret), ::tolower);
+    return ret;
+}
+
 std::wstring toWString(std::string& string)
 {
     std::wstring wstring; std::copy(string.begin(), string.end(), std::back_inserter(wstring));
@@ -12,7 +28,8 @@ std::string toString(std::wstring& wstring)
     return string;
 }
 
-void removeQuotesFromString(std::string& string)
+template<typename T>
+void removeQuotesFromString(T& string)
 {
     if (string.at(0) == '\"' || string.at(0) == '\'')
         string.erase(0, 1);
@@ -20,31 +37,18 @@ void removeQuotesFromString(std::string& string)
         string.erase(string.size() - 1);
 }
 
-size_t find_nth(const std::string& haystack, size_t pos, const std::string& needle, size_t nth)
+template<typename T>
+size_t find_nth(const T& haystack, size_t pos, const T& needle, size_t nth)
 {
     size_t found_pos = haystack.find(needle, pos);
-    if (0 == nth || std::string::npos == found_pos)  return found_pos;
+    if (0 == nth || T::npos == found_pos)  return found_pos;
     return find_nth(haystack, found_pos + 1, needle, nth - 1);
 }
 
-size_t find_nth(const std::wstring& haystack, size_t pos, const std::wstring& needle, size_t nth)
-{
-    size_t found_pos = haystack.find(needle, pos);
-    if (0 == nth || std::wstring::npos == found_pos)  return found_pos;
-    return find_nth(haystack, found_pos + 1, needle, nth - 1);
-}
-
-bool string_replace(std::string& str, const std::string& from, const std::string& to) {
+template<typename T>
+bool string_replace(T& str, const T& from, const T& to) {
     size_t start_pos = str.find(from);
-    if (start_pos == std::string::npos)
-        return false;
-    str.replace(start_pos, from.length(), to);
-    return true;
-}
-
-bool string_replace(std::wstring& str, const std::wstring& from, const std::wstring& to) {
-    size_t start_pos = str.find(from);
-    if (start_pos == std::wstring::npos)
+    if (start_pos == T::npos)
         return false;
     str.replace(start_pos, from.length(), to);
     return true;
@@ -68,9 +72,10 @@ std::wstring formatBytesW(int32_t bytes, int32_t precision = 2)
     return toWString(formatBytes(bytes, precision));
 };
 
-std::wstring GetLongestCommonSubstring(const std::wstring & first, const std::wstring & second)
+template<typename T>
+T GetLongestCommonSubstring(const T & first, const T & second)
 {
-    auto findSubstrings = [](const std::wstring& word, std::set<std::wstring>& substrings)->void
+    auto findSubstrings = [](const T& word, std::set<T>& substrings)->void
     {
         int l = word.length();
         for (int start = 0; start < l; start++) {
@@ -80,13 +85,13 @@ std::wstring GetLongestCommonSubstring(const std::wstring & first, const std::ws
         }
     };
 
-    std::set<std::wstring> firstSubstrings, secondSubstrings;
+    std::set<T> firstSubstrings, secondSubstrings;
     findSubstrings(first, firstSubstrings);
     findSubstrings(second, secondSubstrings);
-    std::set<std::wstring> common;
+    std::set<T> common;
     std::set_intersection(firstSubstrings.begin(), firstSubstrings.end(), secondSubstrings.begin(), secondSubstrings.end(), std::inserter(common, common.begin()));
-    std::vector<std::wstring> commonSubs(common.begin(), common.end());
-    std::sort(commonSubs.begin(), commonSubs.end(), [](const std::wstring &s1, const std::wstring &s2) { return s1.length() > s2.length(); });
+    std::vector<T> commonSubs(common.begin(), common.end());
+    std::sort(commonSubs.begin(), commonSubs.end(), [](const T &s1, const T &s2) { return s1.length() > s2.length(); });
     if (!commonSubs.empty())
         return *(commonSubs.begin());
     else

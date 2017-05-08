@@ -144,7 +144,7 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
     std::wcout << messagesBuffer << std::endl;
 
     std::wstring ualName;
-    if (wszDownloadName == UALNAME)
+    if (toLowerWStr(wszDownloadName) == toLowerWStr(UALNAME))
     {
         ualName = wzsFileName;
         wzsFileName = L"dinput8.dll";
@@ -153,7 +153,11 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
     std::string cusPath;
     auto iniData = iniReader.data[toString(wzsFileName)];
     if (iniData.find(CUSTOMPATH) != iniData.end() && bCreateDirectories) //bCreateDirectories - if downloading files, not updating
-        cusPath = "\\" + iniData[CUSTOMPATH] + "\\";
+    {
+        auto str = iniData[CUSTOMPATH];
+        removeQuotesFromString(str);
+        cusPath = "\\" + str + "\\";
+    }
 
     cpr::Response r;
 
@@ -243,13 +247,13 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
             for (auto it = entries.begin(); it != entries.end(); it++)
             {
                 std::wstring lowcsIt, lowcsFilePath, lowcsFileName, itFileName, lowcsItFileName;
-                std::transform(it->name.begin(), it->name.end(), std::back_inserter(lowcsIt), ::tolower);
-                std::transform(szFilePath.begin(), szFilePath.end(), std::back_inserter(lowcsFilePath), ::tolower);
-                std::transform(szFileName.begin(), szFileName.end(), std::back_inserter(lowcsFileName), ::tolower);
+                lowcsIt = toLowerWStr(it->name);
+                lowcsFilePath = toLowerWStr(szFilePath);
+                lowcsFileName = toLowerWStr(szFileName);
                 itFileName = toWString(it->name);
                 std::replace(itFileName.begin(), itFileName.end(), '/', '\\');
                 itFileName.erase(0, szFilePath.length());
-                std::transform(itFileName.begin(), itFileName.end(), std::back_inserter(lowcsItFileName), ::tolower);
+                lowcsItFileName = toLowerWStr(itFileName);
 
                 if (!itFileName.empty() && (itFileName.back() != L'\\'))
                 {
@@ -331,7 +335,7 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
                                 {
                                     if (bCheckboxChecked)
                                     {
-                                        if (fileExtension == L".ini")
+                                        if (toLowerWStr(fileExtension) == L".ini")
                                         {
                                             std::stringstream iniSS;
                                             unzipper.extractEntryToStream(it->name, iniSS);
@@ -696,10 +700,10 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
                             std::string str1, str2;
                             std::string name(wsFix["assets"][i]["name"].asString());
 
-                            std::transform(strFileName.begin(), strFileName.end(), std::back_inserter(str1), ::tolower);
-                            std::transform(name.begin(), name.end(), std::back_inserter(str2), ::tolower);
+                            str1 = toLowerStr(strFileName);
+                            str2 = toLowerStr(name);
 
-                            if (((str1 + ".zip") == str2) || ((str1 + toString(strExtension)) == str2) || (szUrl.find(name.substr(0, name.find('.'))) != std::string::npos))
+                            if ((toLowerStr(str1 + ".zip") == toLowerStr(str2)) || (toLowerStr(str1 + toString(strExtension)) == toLowerStr(str2)) || (szUrl.find(name.substr(0, name.find('.'))) != std::string::npos))
                             {
                                 std::wcout << L"Found " << toWString((wsFix["assets"][i]["name"]).asString()) << L" on GitHub." << std::endl;
                                 auto szDownloadURL = wsFix["assets"][i]["browser_download_url"].asString();
@@ -818,7 +822,7 @@ DWORD WINAPI ProcessFiles(LPVOID)
         }
 
         //Checking ini file for url
-        auto iniEntry = iniReader.data.get("MODS", toString(strFileName), "");
+        auto iniEntry = iniReader.data.get("MODS", toLowerStr(strFileName), "");
         if (!iniEntry.empty())
         {
             removeQuotesFromString(iniEntry);
@@ -896,7 +900,7 @@ DWORD WINAPI ProcessFiles(LPVOID)
         {
             auto selfName = selfPath.substr(selfPath.rfind('\\') + 1);
             selfName = selfName.substr(0, selfName.rfind('.') + 1);
-            if (!bSelfUpdate && (strFileName == (selfName + L"asi") || strFileName == (selfName + L"exe")))
+            if (!bSelfUpdate && (toLowerWStr(strFileName) == toLowerWStr(selfName + L"asi") || toLowerWStr(strFileName) == toLowerWStr(selfName + L"exe")))
                 continue;
         }
 
@@ -963,13 +967,13 @@ DWORD WINAPI ProcessFiles(LPVOID)
             continue;
 
         auto excl = std::find_if(IniExcludes.begin(), IniExcludes.end(),
-            [&strIni, &iniEntry](auto it) { return (it.first == strIni && it.second == iniEntry); });
+            [&strIni, &iniEntry](auto it) { return (toLowerStr(it.first) == toLowerStr(strIni) && toLowerStr(it.second) == toLowerStr(iniEntry)); });
 
         if (excl != IniExcludes.end())
             continue;
 
         auto iter = std::find_if(FilesPresent.begin(), FilesPresent.end(),
-            [&strIni](const std::wstring& wszFileName) -> bool { return wszFileName == toWString(strIni); });
+            [&strIni](const std::wstring& wszFileName) -> bool { return toLowerWStr(wszFileName) == toLowerWStr(strIni); });
 
         if (iter == FilesPresent.end())
         {
