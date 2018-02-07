@@ -7,6 +7,8 @@ install:
     git submodule update --init --recursive
 
     premake5.bat
+before_build:
+- cmd: '%APPVEYOR_BUILD_FOLDER%\external\curl\buildconf.bat'
 build:
   project: build/modupdater.sln
   verbosity: minimal
