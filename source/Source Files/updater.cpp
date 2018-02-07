@@ -25,7 +25,6 @@ std::wstreambuf* outbuf;
 #define CUSTOMPATH        "CustomPath"
 
 #define UPDATEURL L"UpdateUrl"
-#define GHTOKEN    "63c1f1cc5782c8f1dafad05448e308f0cf8c9198"
 #define UALNAME   L"Ultimate-ASI-Loader.zip"
 #define BUTTONID1  1001
 #define BUTTONID2  1002
@@ -661,7 +660,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
         if (repo.find_first_of('/') != std::string::npos)
             repo.erase(repo.find_first_of('/'));
 
-        szUrl = "https://api.github.com" + repos + user + "/" + repo + "/releases" + "?access_token=" GHTOKEN; // "&per_page=100";
+        szUrl = "https://api.github.com" + repos + user + "/" + repo + "/releases" + "?per_page=100";
 
         std::wcout << L"Connecting to GitHub: " << toWString(szUrl) << std::endl;
 

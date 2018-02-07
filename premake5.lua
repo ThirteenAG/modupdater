@@ -24,9 +24,9 @@ workspace "modupdater"
    includedirs { "external/inireader" }
    includedirs { "external/curl/builds/libcurl-vc-x86-release-static-ipv6-sspi-winssl/include" }
    includedirs { "external/cpr/include" }
-   includedirs { "external/date" }
+   includedirs { "external/date/include/date" }
    includedirs { "external/jsoncpp/include" }
-   includedirs { "external/zipper" }
+   includedirs { "external/zipper/zipper" }
    includedirs { "external/minizip" }
    includedirs { "external/zlib" }
    
@@ -37,7 +37,7 @@ workspace "modupdater"
    links { "zlibstat.lib" }
    links { "libZipper-static.lib" }
    links { "libcurl_a.lib" }
-   defines { "CURL_STATICLIB" }
+   defines { "CURL_STATICLIB", "WIN32" }
    
     prebuildcommands {
         "msbuild ../build/libZipper.sln /t:zlibstat /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32",
@@ -92,6 +92,7 @@ workspace "libZipper"
    configurations { "ReleaseWithoutAsm", "Debug" }
    location "build"
    ignoredefaultlibraries { "MSVCRT" }
+   defines { "WIN32" }
    
 project "zlibstat"
    kind "StaticLib"
