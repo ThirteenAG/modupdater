@@ -92,7 +92,6 @@ workspace "libZipper"
    configurations { "ReleaseWithoutAsm", "Debug" }
    location "build"
    ignoredefaultlibraries { "MSVCRT" }
-   defines { "WIN32" }
    
 project "zlibstat"
    kind "StaticLib"
@@ -140,6 +139,7 @@ project "libZipper-static"
    files { "external/minizip/zip.c" }
    includedirs { "external/minizip" }
    includedirs { "external/zlib/" }
+   includedirs { "external/zipper/zipper" }
       
    defines { "WIN32;_WINDOWS;NDEBUG;USE_ZLIB;_CRT_SECURE_NO_WARNINGS;_CRT_NONSTDC_NO_DEPRECATE;" }
 
