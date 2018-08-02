@@ -197,3 +197,75 @@ bool createFolder(std::wstring folderName) {
 
     return false;
 }
+
+std::string getTimeAgo(int32_t hours)
+{
+    double deltaSeconds = hours * 3600;
+    double deltaMinutes = deltaSeconds / 60.0f;
+    int32_t tmp;
+
+    if (deltaSeconds < 5)
+    {
+        return "just now";
+    }
+    else if (deltaSeconds < 60)
+    {
+        return std::to_string(floor(deltaSeconds)) + " seconds ago";
+    }
+    else if (deltaSeconds < 120)
+    {
+        return "a minute ago";
+    }
+    else if (deltaMinutes < 60)
+    {
+        return std::to_string(floor(deltaMinutes)) + " minutes ago";
+    }
+    else if (deltaMinutes < 120)
+    {
+        return "an hour ago";
+    }
+    else if (deltaMinutes < (24 * 60))
+    {
+        tmp = (int)floor(deltaMinutes / 60);
+        return std::to_string(tmp) + " hours ago";
+    }
+    else if (deltaMinutes < (24 * 60 * 2))
+    {
+        return "yesterday";
+    }
+    else if (deltaMinutes < (24 * 60 * 7))
+    {
+        tmp = (int)floor(deltaMinutes / (60 * 24));
+        return std::to_string(tmp) + " days ago";
+    }
+    else if (deltaMinutes < (24 * 60 * 14))
+    {
+        return "last week";
+    }
+    else if (deltaMinutes < (24 * 60 * 31))
+    {
+        tmp = (int)floor(deltaMinutes / (60 * 24 * 7));
+        return std::to_string(tmp) + " weeks ago";
+    }
+    else if (deltaMinutes < (24 * 60 * 61))
+    {
+        return "last month";
+    }
+    else if (deltaMinutes < (24 * 60 * 365.25))
+    {
+        tmp = (int)floor(deltaMinutes / (60 * 24 * 30));
+        return std::to_string(tmp) + " months ago";
+    }
+    else if (deltaMinutes < (24 * 60 * 731))
+    {
+        return "last year";
+    }
+
+    tmp = (int)floor(deltaMinutes / (60 * 24 * 365));
+    return std::to_string(tmp) + " years ago";
+}
+
+std::wstring getTimeAgoW(int32_t hours)
+{
+    return toWString(getTimeAgo(hours));
+}

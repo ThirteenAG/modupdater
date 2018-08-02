@@ -21,7 +21,7 @@
 #include <regex>
 #include <set>
 #include <stdio.h>
-#include <string> 
+#include <string>
 #include <tchar.h>
 #include <tools.h>
 #include <unzipper.h>

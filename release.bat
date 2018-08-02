@@ -1,4 +1,4 @@
-7za a -tzip ".\bin\modupdater.zip" ".\bin\Release\modupdater.asi" ".\source\Includes\Ini Examples\*.ini" ".\bin\Release\modupdater.exe"
+7za a -tzip ".\bin\modupdater.zip" ".\bin\Release\modupdater.asi" ".\inisamples\default\*.ini" ".\bin\Release\modupdater.exe"
 EXIT
 
 7-Zip Extra

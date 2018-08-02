@@ -15,7 +15,7 @@
 	url = https://github.com/sebastiandev/zipper
 [submodule "external/minizip"]
 	path = external/minizip
-	url = https://github.com/sebastiandev/minizip
+	url = https://github.com/nmoinvaz/minizip
 [submodule "external/zlib"]
 	path = external/zlib
 	url = https://github.com/madler/zlib
