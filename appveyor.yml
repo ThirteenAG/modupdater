@@ -17,6 +17,8 @@ after_build:
 artifacts:
 - path: modupdater.zip
   name: modupdater.zip
+- path: bin\Release\modupdater.lib
+  name: modupdater.lib
 deploy:
 - provider: GitHub
   tag: v$(appveyor_build_version)
