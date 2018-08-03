@@ -46,7 +46,7 @@ workspace "modupdater"
         "msbuild ../build/libZipper.sln /t:zlibstat /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32",
         "msbuild ../build/libZipper.sln /t:libZipper-static /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32",
         "cd ../external/curl/",
-		"buildconf.bat",
+		"call buildconf.bat",
 		"cd winbuild",
         "nmake /f Makefile.vc mode=static RTLIBCFG=static ENABLE_IDN=no"
     }
@@ -89,7 +89,26 @@ project "UpdaterPlugin"
       defines { "NDEBUG" }
       optimize "On"
       
-      
+
+project "UpdaterLib"
+   kind "StaticLib"
+   language "C++"
+   targetdir "bin/%{cfg.buildcfg}"
+   targetname "modupdater"
+   targetextension ".lib"
+   characterset ("MBCS")
+   flags { "StaticRuntime" }
+   buildoptions {"-std:c++latest"}
+   
+   excludes { "source/Includes/Resources/*.rc" }
+
+   filter "configurations:Debug"
+      defines { "DEBUG" }
+      symbols "On"
+
+   filter "configurations:Release"
+      defines { "NDEBUG" }
+      optimize "On"
       
 -- libZipper
 workspace "libZipper"

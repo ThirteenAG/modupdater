@@ -62,7 +62,7 @@ bool CanAccessFolder(LPCWSTR folderName, DWORD genericAccessRights)
 
                     ::MapGenericMask(&genericAccessRights, &mapping);
                     if (::AccessCheck(security, hImpersonatedToken, genericAccessRights, &mapping, &privileges, &privilegesLength, &grantedAccess, &result)) {
-                        bRet = (result == TRUE);
+                        bRet = (result != FALSE);
                     }
                     ::CloseHandle(hImpersonatedToken);
                 }
@@ -257,17 +257,22 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
 
         createFolder(fullPath.substr(0, fullPath.find_last_of('\\')));
 
-        auto muArchive = fullPath + L".modupdater";
-
-        std::ofstream outputFile(muArchive, std::ios::binary);
-        outputFile.write((const char*)&buffer[0], buffer.size());
-        outputFile.close();
-
+        auto muArchive = fullPath;
         if (wszFileName == wszDownloadName)
         {
+            std::ofstream outputFile(muArchive, std::ios::binary);
+            outputFile.write((const char*)&buffer[0], buffer.size());
+            outputFile.close();
             messagesBuffer = wszFileName + L" was updated succesfully.";
             std::wcout << messagesBuffer << std::endl;
             return;
+        }
+        else
+        {
+            muArchive = fullPath + L".modupdater";
+            std::ofstream outputFile(muArchive, std::ios::binary);
+            outputFile.write((const char*)&buffer[0], buffer.size());
+            outputFile.close();
         }
 
         using namespace zipper;
@@ -301,16 +306,20 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
             messagesBuffer = L"Processing " + wszDownloadName;
             std::wcout << messagesBuffer << std::endl;
 
-            std::vector<uint8_t> test;
             try {
-                unzipper.extractEntryToMemory(entries.begin()->name, test);
+                std::vector<uint8_t> test;
+                auto e = std::find_if(entries.begin(), entries.end(), [](auto& i) { return i.compressedSize != 0 && i.uncompressedSize != 0; });
+                if (e != entries.end())
+                    unzipper.extractEntryToMemory(e->name, test);
+                test.clear();
             }
             catch (const std::exception& e) {
                 std::wcout << e.what() << std::endl << std::endl;
                 std::wcout << L"This archive will not be processed." << std::endl << std::endl;
+                unzipper.close();
+                moveFileToRecycleBin(muArchive);
                 return;
             }
-            test.clear();
 
             for (auto it = entries.begin(); it != entries.end(); it++)
             {
@@ -407,26 +416,29 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
                                 {
                                     CIniReader iniOld(toString(iniPath));
 
-                                    moveFileToRecycleBin(iniPath);
-                                    std::ofstream iniFile(iniPath, std::ios::binary);
-                                    unzipper.extractEntryToStream(iniEntry, iniFile);
-                                    iniFile.close();
-
-                                    CIniReader iniNew(iniEntry);
-                                    for each (auto sec in iniOld.data)
+                                    if (!iniOld.data.empty())
                                     {
-                                        for each (auto key in sec.second)
+                                        moveFileToRecycleBin(iniPath);
+                                        std::ofstream iniFile(iniPath, std::ios::binary);
+                                        unzipper.extractEntryToStream(iniEntry, iniFile);
+                                        iniFile.close();
+
+                                        CIniReader iniNew(iniEntry);
+                                        for each (auto sec in iniOld.data)
                                         {
-                                            iniNew.data[sec.first][key.first] = iniOld.data[sec.first][key.first];
+                                            for each (auto key in sec.second)
+                                            {
+                                                iniNew.data[sec.first][key.first] = iniOld.data[sec.first][key.first];
+                                            }
                                         }
+                                        iniNew.data.write_file(iniEntry);
+
+                                        messagesBuffer = iniName + L" was updated succesfully.";
+                                        std::wcout << messagesBuffer << std::endl;
+
+                                        if (bCheckboxChecked && fileExtension == L".ini")
+                                            continue;
                                     }
-                                    iniNew.data.write_file(iniEntry);
-
-                                    messagesBuffer = iniName + L" was updated succesfully.";
-                                    std::wcout << messagesBuffer << std::endl;
-
-                                    if (bCheckboxChecked && fileExtension == L".ini")
-                                        continue;
                                 }
                             }
                         }
@@ -852,7 +864,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
                 {
                     std::wcout << L"GitHub's response parsed successfully." << L" Page " << i << "." << std::endl;
 
-                    // default use case, when file that's being updated is inside the zip archive of the same name
+                    // default use case, when file that's being updated is inside the zip archive of the same name or starts with it
                     for (Json::ValueConstIterator it = parsedFromString.begin(); it != parsedFromString.end(); ++it)
                     {
                         const Json::Value& jVal = *it;
@@ -1263,7 +1275,7 @@ DWORD WINAPI ProcessFiles(LPVOID)
                     if (fui.wszFullFilePath.find(L"\\modloader\\") != std::wstring::npos && fui.wszFullFilePath.find(L"modloader\\modloader.asi") == std::wstring::npos)
                     {
                         auto pos = fui.wszFullFilePath.find_last_of('\\');
-                        fui.wszFullFilePath.insert(pos, L"\\" + fui.wszFileName.substr(0, fui.wszFileName.find_last_of(L".")));
+                        fui.wszFullFilePath.insert(pos, L"\\" + fui.wszFileName.substr(0, fui.wszFileName.find_last_of(L'.')));
                     }
 
                     FilesToDownload.push_back(fui);
@@ -1344,4 +1356,9 @@ void Init()
     }
 
     std::getchar();
+}
+
+void ModupdaterInit()
+{
+    Init();
 }

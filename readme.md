@@ -5,7 +5,7 @@ modupdater
 
 >With **"Update all downloaded files"** checkbox, updater will replace **all** downloaded files from the archive (except asi loader, it's updated separately).
 >If this checkbox is not set, only **one** file will be updated from that downloaded archive (.asi by default).
->You can also choose between 3 different methods of replacing ini files: **replace if sections or keys don't match**, **replace all** and **don't replace**.
+>You can also choose between 3 different methods of replacing ini files: **replace all and keep settings**, **replace all and discard settings** and **don't replace**.
 
 ----------
 
@@ -14,7 +14,7 @@ modupdater
 ----------
 
 
-![](http://i.imgur.com/Jez2DGA.png)
+![](https://i.imgur.com/j7llJJG.png)
 
 ----------
 
@@ -26,7 +26,7 @@ On first launch the updater may offer "update" to already up-to-date version of 
 
 ###  Installation
 
-Put **modupdater.asi** and/or **modupdater.exe** in the folder with files you want to update. Updater will scan this folder for specified files ([see options section](#options)) and all subfolders. If you want updater to update all mods from all folders, set **ScanFromRootFolder** option to **1**.
+Put **modupdater.asi** and/or **modupdater.exe** in the folder with files you want to update. Updater will scan this folder for specified files ([see options section](#options)) and all subfolders. If you want updater to update all mods from all folders, set **ScanFromRootFolder** option to **1** (not recommended).
 
 -------------------------------
 
@@ -43,11 +43,14 @@ Here's a list of options you can set:
     GTA3.WidescreenFix.asi = https://github.com/ThirteenAG/WidescreenFixesPack/
     
     [MISC]
-    SelfUpdate                <-- 1 or 0
-    SkipUpdateCompleteDialog  <-- 1 or 0
-    ScanFromRootFolder        <-- 1 or 0
-    OutputLogToFile           <-- 1 or 0
-    WebUrl                    <-- 1 or 0
+    SelfUpdate                   <-- 1 or 0
+    SkipUpdateCompleteDialog     <-- 1 or 0
+    ScanFromRootFolder           <-- 1 or 0
+    OutputLogToFile              <-- 1 or 0
+    WebUrl                       <-- 1 or 0
+
+    [DATE]
+    UpdateFrequencyInHours = 6   <-- number of hours
     
     [DEBUG]
     AlwaysUpdate              <-- 1 or 0
@@ -63,11 +66,31 @@ Here's a list of options you can set:
 
 **OutputLogToFile**. Simply creates a log file and writes all messages to it.
 
+**[DATE]**
+
+**UpdateFrequencyInHours**. Updater will check for updates every 6 hours by default. Change that value to 0 to check for updates every time at startup. This setting doesn't work if **AlwaysUpdate** set to **1**.
+
 **[DEBUG]**
 
 **AlwaysUpdate**. For testing purposes, update dialog will be shown even if there's no updates available. 
 
-See ini example [here](https://github.com/ThirteenAG/modupdater/tree/master/inisamples).
+###  File specific options
+
+There are a few options available to customize update process for each specific file. If a source is set for **file.dll** under **[MODS]** section, simply creating **[file.dll]** section anywhere in the ini file will allow modupdater to use these options under it.
+
+**ExtractSingleFile** - only one file will be extracted from the archive.
+
+**PlaceToRoot** - file will be extracted to root directory. Root directory can only be determined if modupdater loaded as asi plugin.
+
+**IgnoreUpdates** - updates will not be shown for this file. Modupdater writes this parameter if **"Disable updates for this file"** link is pressed.
+
+**CustomPath** - files will be extracted to a subfolder, relative to modupdater's location.
+
+**SourceName** - if updated file has totally different archive name, you can specify it here. See example [here](https://github.com/ThirteenAG/modupdater/blob/master/inisamples/gtasa%20-%20modloader/modupdater.ini#L12-L15).
+
+**Password** - if archive is password protected, password should be specified here. See example [here](https://github.com/ThirteenAG/modupdater/blob/master/inisamples/dgvoodoo%20-%20download/modupdater.ini).
+
+See ini examples [here](https://github.com/ThirteenAG/modupdater/tree/master/inisamples).
 
 -------------------------------
 
