@@ -992,12 +992,10 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
             std::string szDownloadName = tempStr.substr(0, (endPos == 0) ? std::string::npos : endPos);
             std::string szFileSize = rHead.header["Content-Length"];
 
-            std::tm t;
-            std::istringstream ss(rHead.header["Last-Modified"]); // Wed, 27 Jul 2016 18:43:42 GMT
-            ss >> std::get_time(&t, "%a, %d %b %Y %H:%M:%S %Z");
-
+            date::sys_seconds tp;
             auto now = date::floor<std::chrono::seconds>(std::chrono::system_clock::now());
-            auto tp = date::sys_days{ date::year{ t.tm_year + 1900 } / (t.tm_mon + 1) / t.tm_mday } +std::chrono::hours{ t.tm_hour } +std::chrono::minutes{ t.tm_min } +std::chrono::seconds{ t.tm_sec };
+            std::istringstream ss{ rHead.header["Last-Modified"] };
+            ss >> date::parse("%a, %d %b %Y %H:%M:%S %Z", tp); // "updated_at": "2016-08-16T11:42:53Z" ISO 8601
             auto nRemoteFileUpdateTime = date::make_time(now - tp).hours().count();
 
             return std::make_tuple((bool(ss) ? nRemoteFileUpdateTime : -2), szDownloadURL, szDownloadName, szFileSize);
