@@ -16,3 +16,6 @@
 [submodule "external/inireader"]
 	path = external/inireader
 	url = https://github.com/ThirteenAG/IniReader
+[submodule "external/zipper"]
+	path = external/zipper
+	url = https://github.com/ThirteenAG/zipper
