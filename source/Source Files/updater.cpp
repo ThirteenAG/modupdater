@@ -12,9 +12,11 @@ struct FileUpdateInfo
     int32_t	nFileSize;
 };
 
+using namespace std::experimental::filesystem;
+
 CIniReader iniReader;
 HWND MainHwnd, DialogHwnd;
-std::wstring modulePath, processPath, selfPath;
+std::wstring modulePath, processPath, selfPath, rootPath;
 std::wstring messagesBuffer;
 std::wofstream logFile;
 std::wstreambuf* outbuf;
@@ -169,7 +171,7 @@ void FindFilesRecursively(const std::wstring &directory, std::function<void(std:
     }
 }
 
-void CleanupLockedFiles()
+DWORD WINAPI CleanupLockedFiles(LPVOID)
 {
     auto cb = [](std::wstring &s, WIN32_FIND_DATAW)
     {
@@ -181,12 +183,15 @@ void CleanupLockedFiles()
         }
     };
 
-    if (iniReader.ReadInteger("MISC", "ScanFromRootFolder", 0) == 0)
+    if (iniReader.ReadInteger("MISC", "ScanFromRootFolder", 0) != 0)
+        FindFilesRecursively(rootPath, cb);
+    else
     {
-        if (modulePath != processPath.substr(0, processPath.rfind('\\') + 1))
-            FindFilesRecursively(processPath.substr(0, processPath.rfind('\\') + 1), cb, true);
+        if (rootPath != modulePath)
+            FindFilesRecursively(rootPath, cb, true);
+        FindFilesRecursively(modulePath, cb);
     }
-    FindFilesRecursively(modulePath, cb);
+    return 0;
 }
 
 void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, std::wstring wszFileName, std::wstring wszFullFilePath, std::wstring wszDownloadURL, std::wstring wszDownloadName, bool bCheckboxChecked, int32_t nRadioBtnID, bool bCreateDirectories)
@@ -323,6 +328,10 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
 
             for (auto it = entries.begin(); it != entries.end(); it++)
             {
+                auto bExtractSingleFile = iniData != iniReader.data.end() && iniData->second.find(EXTRACTSINGLEFILE) != iniData->second.end();
+                if (bExtractSingleFile)
+                    it = itr;
+
                 std::wstring lowcsIt, lowcsFilePath, lowcsFileName, itFileName, lowcsItFileName;
                 lowcsIt = toLowerWStr(it->name);
                 lowcsFilePath = toLowerWStr(szFilePath);
@@ -334,11 +343,11 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
 
                 if (!itFileName.empty() && (itFileName.back() != L'\\'))
                 {
-                    if (!selfPath.empty() && wszDownloadURL.find(L"ThirteenAG/modupdater") != std::wstring::npos)
+                    if (!selfPath.empty() && wszDownloadURL.find(L"ThirteenAG/modupdater") == std::wstring::npos)
                     {
                         auto selfName = toLowerWStr(selfPath.substr(selfPath.rfind('\\') + 1));
                         auto selfNameNoExt = toLowerWStr(selfName.substr(0, selfName.rfind('.') + 1));
-                        if ((lowcsFileName == selfName || lowcsFileName == selfNameNoExt + L"asi" || lowcsFileName == selfNameNoExt + L"exe"))
+                        if ((lowcsItFileName == selfName || lowcsItFileName == selfNameNoExt + L"asi" || lowcsItFileName == selfNameNoExt + L"exe"))
                             continue;
                     }
 
@@ -349,11 +358,9 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
 
                         std::wstring fullPath = wszFullFilePath.substr(0, wszFullFilePath.find_last_of('\\') + 1) + toWString(cusPath) + itFileName;
 
-                        auto bExtractSingleFile = iniData != iniReader.data.end() && iniData->second.find(EXTRACTSINGLEFILE) != iniData->second.end();
                         auto bPlaceToRoot = iniData != iniReader.data.end() && iniData->second.find(PLACETOROOT) != iniData->second.end();
-
                         if (bPlaceToRoot || !ualName.empty())
-                            fullPath = processPath.substr(0, processPath.rfind('\\') + 1) + (ualName.empty() ? itFileName : ualName);
+                            fullPath = rootPath + (ualName.empty() ? itFileName : ualName);
 
                         if (!ualName.empty())
                             ualName.clear();
@@ -816,6 +823,11 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
     else
         strFileName.append(L".asi");
 
+    if (strUrl.find(L"ThirteenAG/Ultimate-ASI-Loader") != std::wstring::npos)
+    {
+        strFileName = UALNAME;
+    }
+
     auto szUrl = toString(strUrl);
     auto rTest = cpr::Head(cpr::Url{ szUrl });
 
@@ -869,7 +881,7 @@ std::tuple<int32_t, std::string, std::string, std::string> GetRemoteFileInfo(std
                     {
                         const Json::Value& jVal = *it;
 
-                        if (jVal["draft"] == true || jVal["prerelease"] == true)
+                        if (jVal["draft"] == true /*|| jVal["prerelease"] == true*/)
                             continue;
 
                         for (size_t i = 0; i < jVal["assets"].size(); i++)
@@ -1045,8 +1057,6 @@ int32_t GetLocalFileInfo(FILETIME ftCreate, FILETIME ftLastAccess, FILETIME ftLa
 
 DWORD WINAPI ProcessFiles(LPVOID)
 {
-    CleanupLockedFiles();
-
     bool bSelfUpdate = iniReader.ReadInteger("MISC", "SelfUpdate", 1) != 0;
     bool bAlwaysUpdate = iniReader.ReadInteger("DEBUG", "AlwaysUpdate", 0) != 0;
 
@@ -1146,12 +1156,13 @@ DWORD WINAPI ProcessFiles(LPVOID)
             FilesUpdateData.push_back(std::make_tuple(s, std::wstring(L"https://github.com/ThirteenAG/WidescreenFixesPack/releases"), fd));
     };
 
-    FindFilesRecursively(modulePath, cb);
-
-    if (iniReader.ReadInteger("MISC", "ScanFromRootFolder", 0) == 0)
+    if (iniReader.ReadInteger("MISC", "ScanFromRootFolder", 0) != 0)
+        FindFilesRecursively(rootPath, cb);
+    else
     {
-        if (modulePath != processPath.substr(0, processPath.rfind('\\') + 1))
-            FindFilesRecursively(processPath.substr(0, processPath.rfind('\\') + 1), cb, true);
+        if (rootPath != modulePath)
+            FindFilesRecursively(rootPath, cb, true);
+        FindFilesRecursively(modulePath, cb);
     }
 
     for (auto& tuple : FilesUpdateData)
@@ -1322,6 +1333,18 @@ void Init()
         outbuf = std::wcout.rdbuf(logFile.rdbuf());
     }
 
+    rootPath = processPath.substr(0, processPath.rfind('\\') + 1);
+    if (selfPath == processPath)
+    {
+        auto p = path(processPath).parent_path().parent_path().wstring();
+        if (exists(p + L"\\gta_sa.exe") || exists(p + L"\\gta-sa.exe") || exists(p + L"\\gta_vc.exe") || exists(p + L"\\gta-vc.exe") || exists(p + L"\\gta3.exe"))
+        {
+            rootPath = canonical(p).wstring() + L"\\";
+        }
+    }
+
+    CloseHandle(CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&CleanupLockedFiles, 0, 0, NULL));
+
     auto now = date::floor<std::chrono::seconds>(std::chrono::system_clock::now());
     date::sys_seconds tp;
     auto nWhenLastUpdateAttemptWas = std::chrono::hours(INT_MAX);
@@ -1330,25 +1353,23 @@ void Init()
     if (now >= tp)
         nWhenLastUpdateAttemptWas = date::make_time(now - tp).hours();
 
+#ifndef _DEBUG
     if (bool(in) && nWhenLastUpdateAttemptWas < std::chrono::hours(nUpdateFrequencyInHours) && !iniReader.ReadInteger("DEBUG", "AlwaysUpdate", 0) != 0)
     {
         std::wcout << L"Last update attempt was " << nWhenLastUpdateAttemptWas.count() << L" hours ago." << std::endl;
         std::wcout << L"Modupdater is configured to update once every " << nUpdateFrequencyInHours << L" hours." << std::endl;
     }
     else
+#endif
     {
-        iniReader.WriteString("DATE", "WhenLastUpdateAttemptWas", date::format("%D %T %Z", now));
-
         std::wcout << "Current directory: " << modulePath << std::endl;
-
-        auto procFold = processPath.substr(0, processPath.rfind('\\') + 1);
-        if (iniReader.ReadInteger("MISC", "ScanFromRootFolder", 0) != 0)
-            modulePath = procFold;
 
         token = iniReader.ReadString("DEBUG", "Token", "");
 
-        if (!CanAccessFolder(modulePath.c_str(), GENERIC_READ | GENERIC_WRITE) || !CanAccessFolder(procFold.c_str(), GENERIC_READ | GENERIC_WRITE))
+        if (!CanAccessFolder(modulePath.c_str(), GENERIC_READ | GENERIC_WRITE) || !CanAccessFolder(rootPath.c_str(), GENERIC_READ | GENERIC_WRITE))
             reqElev = true;
+        else
+            iniReader.WriteString("DATE", "WhenLastUpdateAttemptWas", date::format("%D %T %Z", now));
 
         CloseHandle(CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&ProcessFiles, 0, 0, NULL));
     }

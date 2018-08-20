@@ -6,8 +6,8 @@ workspace "modupdater"
    defines { "rsc_CompanyName=\"ThirteenAG\"" }
    defines { "rsc_LegalCopyright=\"MIT License\""} 
    defines { "rsc_FileVersion=\"1.0.0.0\"", "rsc_ProductVersion=\"1.0.0.0\"" }
-   defines { "rsc_InternalName=\"%{prj.name}\"", "rsc_ProductName=\"%{prj.name}\"", "rsc_OriginalFilename=\"%{prj.name}.asi\"" }
-   defines { "rsc_FileDescription=\"https://thirteenag.github.io/wfp\"" }
+   defines { "rsc_InternalName=\"%{wks.name}\"", "rsc_ProductName=\"%{wks.name}\"", "rsc_OriginalFilename=\"%{wks.name}.asi\"" }
+   defines { "rsc_FileDescription=\"%{wks.name}\"" }
    defines { "rsc_UpdateUrl=\"https://github.com/ThirteenAG/modupdater\"" }
    
    files { "source/Header Files/*.h" }
