@@ -1327,7 +1327,7 @@ void Init()
     auto nUpdateFrequencyInHours = iniReader.ReadInteger("DATE", "UpdateFrequencyInHours", 6);
     auto szWhenLastUpdateAttemptWasInHours = iniReader.ReadString("DATE", "WhenLastUpdateAttemptWas", "");
 
-    if (iniReader.ReadInteger("MISC", "OutputLogToFile", 0) != 0)
+    if (iniReader.ReadInteger("MISC", "OutputLogToFile", 1) != 0)
     {
         logFile.open(modulePath + L"modupdater.log");
         outbuf = std::wcout.rdbuf(logFile.rdbuf());
@@ -1373,8 +1373,6 @@ void Init()
 
         CloseHandle(CreateThread(0, 0, (LPTHREAD_START_ROUTINE)&ProcessFiles, 0, 0, NULL));
     }
-
-    std::getchar();
 }
 
 void ModupdaterInit()
