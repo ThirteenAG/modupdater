@@ -1,21 +1,9 @@
-[submodule "external/cpr"]
-	path = external/cpr
-	url = https://github.com/whoshuu/cpr
-[submodule "external/curl"]
-	path = external/curl
-	url = https://github.com/curl/curl
 [submodule "external/date"]
 	path = external/date
 	url = https://github.com/HowardHinnant/date
 [submodule "external/jsoncpp"]
 	path = external/jsoncpp
 	url = https://github.com/open-source-parsers/jsoncpp
-[submodule "external/zlib"]
-	path = external/zlib
-	url = https://github.com/madler/zlib
 [submodule "external/inireader"]
 	path = external/inireader
 	url = https://github.com/ThirteenAG/IniReader
-[submodule "external/zipper"]
-	path = external/zipper
-	url = https://github.com/ThirteenAG/zipper

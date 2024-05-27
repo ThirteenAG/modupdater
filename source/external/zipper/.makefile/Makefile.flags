@@ -1,0 +1,328 @@
+# -*- mode: makefile -*-
+##==================================================================================
+## MIT License
+##
+## Copyright (c) 2019 Quentin Quadrat <lecrapouille@gmail.com>
+##
+## Permission is hereby granted, free of charge, to any person obtaining a copy
+## of this software and associated documentation files (the "Software"), to deal
+## in the Software without restriction, including without limitation the rights
+## to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+## copies of the Software, and to permit persons to whom the Software is
+## furnished to do so, subject to the following conditions:
+##
+## The above copyright notice and this permission notice shall be included in all
+## copies or substantial portions of the Software.
+##
+## THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+## IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+## FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+## AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+## LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+## OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+## SOFTWARE.
+##==================================================================================
+
+###################################################
+# Clang and GCC common compilation flags.
+#
+ifeq ($(CCFLAGS),)
+
+  # Avoid temporary files, speeding up builds
+  CCFLAGS += -pipe
+
+  # Warms about C
+  CCFLAGS += -Wstrict-prototypes
+
+  # Clang and GCC common flags
+  CCFLAGS += -Wall -Wextra -Wuninitialized -Wundef -Wunused \
+  -Wunused-result -Wunused-parameter -Wtype-limits	    \
+  -Wcast-align -Wcast-qual -Wconversion -Wfloat-equal	    \
+  -Wpointer-arith -Wswitch-enum -Wpedantic -Wpacked         \
+  -Wdeprecated -Wvariadic-macros -Wvla -Wsign-conversion -Wshadow
+
+  # Clang specific
+  ifeq ($(COMPILER_NAME),clang)
+    CCFLAGS += -Wconditional-uninitialized	        \
+    -Wused-but-marked-unused -Wunused-member-function				\
+    -Wunused-getter-return-value -Wunused-exception-parameter			\
+    -Wunneeded-member-function -Wunneeded-internal-declaration -Wshadow-all	\
+    -Wunreachable-code-aggressive -Wvector-conversion -Wzero-length-array	\
+    -Wthread-safety -Werror=implicit-function-declaration \
+    -Wtautological-compare -Wno-unused-command-line-argument
+  # GCC specific
+  else ifeq ($(COMPILER_NAME),$(filter $(COMPILER_NAME),g++ gcc))
+    GCC_GREATER_V4_8 := $(shell expr $(COMPILER_VERSION) \>= 40800)
+    GCC_GREATER_V4_9 := $(shell expr $(COMPILER_VERSION) \>= 40900)
+    GCC_GREATER_V6 := $(shell expr $(COMPILER_VERSION) \>= 60000)
+    GCC_GREATER_V9 := $(shell expr $(COMPILER_VERSION) \>= 90000)
+    ifeq "$(GCC_GREATER_V6)" "1"
+      CCFLAGS += -Wtautological-compare
+    else ifeq "$(GCC_GREATER_V9)" "1"
+      CCFLAGS += -Wpessimizzing-move
+    endif
+  endif
+
+  # Flags for hardening the binary
+  CCFLAGS += -Wformat -Wformat-security -Werror=format-security -D_FORTIFY_SOURCE=2 -fPIE -fexceptions
+  ifeq ($(COMPILER_NAME),$(filter $(COMPILER_NAME),g++ gcc))
+    ifeq "$(GCC_GREATER_V4_9)" "1"
+      CCFLAGS += -fstack-protector-strong
+    endif
+  endif
+
+  # Compiler version
+  CCFLAGS += -DCOMPILER_VERSION=$(COMPILER_VERSION)
+else
+
+$(warning CCFLAGS: info: You have replaced default compilation flags by your own flags $(CCFLAGS))
+endif
+
+ifeq ($(CXXFLAGS),)
+
+  # Avoid temporary files, speeding up builds
+  CXXFLAGS += -pipe
+
+  # Clang and GCC common flags
+  CXXFLAGS += -Wall -Wextra -Wuninitialized -Wundef -Wunused \
+  -Wunused-result -Wunused-parameter -Wtype-limits	    \
+  -Wcast-align -Wcast-qual -Wconversion -Wfloat-equal	    \
+  -Wpointer-arith -Wswitch-enum -Wpedantic -Wpacked         \
+  -Wdeprecated -Wvariadic-macros -Wvla -Wsign-conversion -Wshadow -Wold-style-cast
+
+  # Clang specific
+  ifeq ($(COMPILER_NAME),clang)
+    CXXFLAGS += -Wconditional-uninitialized	        \
+    -Wused-but-marked-unused -Wunused-member-function				\
+    -Wunused-getter-return-value -Wunused-exception-parameter			\
+    -Wunneeded-member-function -Wunneeded-internal-declaration -Wshadow-all	\
+    -Wunreachable-code-aggressive -Wvector-conversion -Wzero-length-array	\
+    -Wthread-safety -Werror=implicit-function-declaration \
+    -Wtautological-compare -Wno-unused-command-line-argument -Wundefined-reinterpret-cast -Wsuper-class-method-mismatch
+  # GCC specific
+  else ifeq ($(COMPILER_NAME),$(filter $(COMPILER_NAME),g++ gcc))
+    GCC_GREATER_V4_8 := $(shell expr $(COMPILER_VERSION) \>= 40800)
+    GCC_GREATER_V4_9 := $(shell expr $(COMPILER_VERSION) \>= 40900)
+    GCC_GREATER_V6 := $(shell expr $(COMPILER_VERSION) \>= 60000)
+    GCC_GREATER_V9 := $(shell expr $(COMPILER_VERSION) \>= 90000)
+    ifeq "$(GCC_GREATER_V6)" "1"
+      CXXFLAGS += -Wtautological-compare
+    else ifeq "$(GCC_GREATER_V9)" "1"
+      CXXFLAGS += -Wpessimizzing-move
+    endif
+  endif
+
+  # Flags for hardening the binary
+  CXXFLAGS += -Wformat -Wformat-security -Werror=format-security -D_FORTIFY_SOURCE=2 -fPIE -fexceptions
+  ifeq ($(COMPILER_NAME),$(filter $(COMPILER_NAME),g++ gcc))
+    ifeq "$(GCC_GREATER_V4_9)" "1"
+      CXXFLAGS += -fstack-protector-strong
+    endif
+  endif
+
+  # Compiler version
+  CXXFLAGS += -DCOMPILER_VERSION=$(COMPILER_VERSION)
+else
+
+$(warning CXXFLAGS: info: You have replaced default compilation flags by your own flags $(CXXFLAGS))
+endif
+
+# Creating shared libraries from static ones
+# Note: since 2024 -noall_load are removed on MacOS
+ifneq ($(ARCHI),Darwin)
+  LINK_ALL_LOAD=-Wl,--whole-archive
+  LINK_NO_ALL_LOAD=-Wl,--no-whole-archive
+endif
+
+###################################################
+# Shared libraries file extension.
+#
+LDFLAGS += -pie
+ifeq ($(ARCHI),Darwin)
+DLL_CXXFLAGS := -fPIC
+DLL_LDFLAGS := -dynamiclib
+DEFINES += -DDLL_LINKAGE=
+
+else ifeq ($(ARCHI),Linux)
+DLL_CXXFLAGS := -fPIC
+DLL_LDFLAGS := -shared
+DEFINES += -DDLL_LINKAGE=
+
+else ifeq ($(ARCHI),Windows)
+DLL_CXXFLAGS := -fPIC
+DLL_LDFLAGS := -shared
+#if TODO
+#DEFINES += -DDLL_LINKAGE="__declspec(dllexport)"
+#else
+#DEFINES += -DDLL_LINKAGE="__declspec(dllimport)"
+#endif
+ifeq ($(WIN_ENV),MINGW)
+LDFLAGS += -lmingw32
+else
+$(error Unknown shared library file extension for this architecture)
+endif
+endif
+
+###################################################
+# Profile code.
+#
+ifeq ($(USE_GPROF),1)
+CXXFLAGS += -pg
+LDFLAGS += -pg
+ifeq ($(BUILD_TYPE),release)
+BUILD_TYPE = debug
+$(warning Release mode desired but USE_GPROF will force debug mode)
+endif
+endif
+
+###################################################
+# Use AddressSanitizer.
+#
+ifeq ($(USE_ASAN),1)
+CXXFLAGS += -fsanitize=address -fno-omit-frame-pointer
+LDFLAGS += -fsanitize=address -static-libasan
+endif
+
+###################################################
+# Use coverage.
+#
+ifeq ($(USE_COVERAGE),1)
+CXXFLAGS += --coverage
+LDFLAGS += --coverage
+endif
+
+###################################################
+# Activate debug if backward-cpp library is desired
+#
+ifeq ($(USE_BACKWARD),1)
+ifeq ($(BUILD_TYPE),release)
+BUILD_TYPE = debug
+$(warning Release mode desired but USE_BACKWARD will force debug mode)
+endif
+endif
+
+###################################################
+# Activate debug if dbg-macro library is desired
+#
+ifeq ($(USE_DEBUG_MACRO),1)
+ifeq ($(BUILD_TYPE),release)
+BUILD_TYPE = debug
+$(warning Release mode desired but USE_DEBUG_MACRO will force debug mode)
+endif
+endif
+
+###################################################
+# TODO: -O1 is needed for hardening
+# TODO: -O0 seems better for debuging with g++
+# GCC and clang Optimization flags
+#
+ifeq ($(BUILD_TYPE),debug)
+USE_BACKWARD = 1
+USE_DEBUG_MACRO = 1
+OPTIM_FLAGS = -O0 -g3 -fasynchronous-unwind-tables
+DEFINES += -UNDEBUG -D_GLIBCXX_ASSERTIONS
+else ifeq ($(BUILD_TYPE),release)
+USE_BACKWARD = 0
+USE_DEBUG_MACRO = 0
+OPTIM_FLAGS = -O2
+DEFINES += -DNDEBUG
+else ifeq ($(BUILD_TYPE),normal)
+USE_BACKWARD = 1
+USE_DEBUG_MACRO = 1
+OPTIM_FLAGS = -O2 -g
+DEFINES += -UNDEBUG -D_GLIBCXX_ASSERTIONS
+else
+$(error BUILD_TYPE shall be debug or release but get $(BUILD_TYPE))
+endif
+
+###################################################
+# Disable Backward when using gprof or ASAN or
+# architecture different from Linux
+#
+ifeq ($(USE_GPROF),1)
+USE_BACKWARD = 0
+endif
+
+ifeq ($(USE_ASAN),1)
+USE_BACKWARD = 0
+endif
+
+ifeq ($(USE_BACKWARD),1)
+ifeq ($(ARCHI),Windows)
+$(warning Warning: Cannot use backward-cpp lib for Windows. USE_BACKWARD will be disabled)
+USE_BACKWARD = 0
+endif
+
+ifeq ($(ARCHI),Darwin)
+$(warning Warning: Cannot use backward-cpp lib for MacOS X. USE_BACKWARD will be disabled)
+USE_BACKWARD = 0
+endif
+
+ifeq ($(ARCHI),Emscripten)
+$(warning Warning: Cannot use backward-cpp lib for Emscripten. USE_BACKWARD will be disabled)
+USE_BACKWARD = 0
+endif
+endif
+
+###################################################
+# Use backward-cpp library for tracing the stack when a crash occured.
+#
+ifeq ($(USE_BACKWARD),1)
+OBJS += backward.o
+INCLUDES += -I$(BUILD)/backward-cpp
+VPATH += $(BUILD)/backward-cpp
+DEFINES += -DBACKWARD_HAS_DW=1 -DBACKWARD_HAS_BFD=0 -DBACKWARD_HAS_DWARF=0
+DEFINES += -DBACKWARD_HAS_UNWIND=1 -DBACKWARD_HAS_BACKTRACE=0
+DEFINES += -DBACKWARD_HAS_BACKTRACE_SYMBOL=1
+LINKER_FLAGS += -ldw
+endif
+
+###################################################
+# Use dbg-macro library for printf-style debugging
+#
+ifeq ($(USE_DEBUG_MACRO),1)
+INCLUDES += -I$(BUILD)/dbg-macro
+DEFINES += -DBG_MACRO_NO_WARNING
+endif
+
+###################################################
+# Use ifdef because pkg-config does not like empty argument
+#
+ifdef PKG_LIBS
+PKGCFG_LIBS := `pkg-config --libs $(PKG_LIBS)`
+PKGCFG_CFLAGS := `pkg-config --cflags $(PKG_LIBS)`
+endif
+
+###################################################
+# Place the build directory in first position.
+# This allows to locate generated files first
+# and object files too (while not recommended).
+#
+VPATH := $(BUILD) $(VPATH)
+INCLUDES := -I$(BUILD) $(INCLUDES)
+
+###################################################
+# Final compilation flags
+#
+CXXFLAGS += $(DLL_CXXFLAGS)
+CCFLAGS += $(DLL_CXXFLAGS)
+
+###################################################
+# Configure for Emscripten
+#
+ifneq ($(EMSCRIPTEN),)
+RUN := emrun
+endif
+
+###################################################
+# Disable strip command
+#
+ifneq ($(EMSCRIPTEN),)
+STRIP :=
+endif
+ifeq ($(ARCHI),Darwin)
+STRIP :=
+endif
+ifneq ($(BUILD_TYPE),release)
+STRIP :=
+endif

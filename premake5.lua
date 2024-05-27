@@ -1,8 +1,11 @@
 -- modupdater
 workspace "modupdater"
    configurations { "Release", "Debug" }
+   platforms { "Win32", "x64" }
    location "build"
-   
+   cppdialect "C++latest"
+   characterset ("UNICODE")
+
    defines { "rsc_CompanyName=\"ThirteenAG\"" }
    defines { "rsc_LegalCopyright=\"MIT License\""} 
    defines { "rsc_FileVersion=\"1.0.0.0\"", "rsc_ProductVersion=\"1.0.0.0\"" }
@@ -10,61 +13,94 @@ workspace "modupdater"
    defines { "rsc_FileDescription=\"%{wks.name}\"" }
    defines { "rsc_UpdateUrl=\"https://github.com/ThirteenAG/modupdater\"" }
    
-   files { "source/Header Files/*.h" }
-   files { "source/Source Files/*.cpp", "source/Source Files/*.c" }
+   files { "source/*.h" }
+   files { "source/*.cpp" }
+   files { "libmodupdater.h" }
    
-   files { "source/Includes/Resources/*.rc" }
+   files { "source/resources/*.rc" }
    
-   files { "external/cpr/cpr/*.cpp" }
-   files { "external/jsoncpp/src/lib_json/*.cpp" }
-   files { "external/zipper/zipper/*.cpp" }
-   files { "external/zipper/minizip/*.cpp" }
-   
-   includedirs { "source/Header Files/" }
+   files { "external/jsoncpp/src/lib_json/*.h", "external/jsoncpp/src/lib_json/*.cpp" }
+   files { "source/external/zipper/external/minizip/*.h" }
+   files { "source/external/zipper/external/minizip/*.c" }
+   files { "source/external/zipper/external/minizip/zipper/*.cpp" }
+   files { "source/external/zipper/external/minizip/*.cpp" }
+   files { "source/external/zipper/include/Zipper/*.hpp" }
+   files { "source/external/zipper/src/**.*" }
+
+   includedirs { "dist" }
+   includedirs { "source" }
    includedirs { "external/inireader" }
-   includedirs { "external/curl/builds/libcurl-vc-x86-release-static-ipv6-sspi-winssl/include" }
-   includedirs { "external/cpr/include" }
    includedirs { "external/date/include/date" }
    includedirs { "external/jsoncpp/include" }
-   includedirs { "external/zipper/zipper" }
-   includedirs { "external/zipper/minizip" }
-   includedirs { "external/zlib" }
-   
-   libdirs { "source/Includes/Libs" }
-   libdirs { "external/curl/builds/libcurl-vc-x86-release-static-ipv6-sspi-winssl/lib" }
+   includedirs { "source/external/zipper/external/minizip" }
+   includedirs { "source/external/zipper/external/minizip/zipper" }
+   includedirs { "source/external/zipper/external/minizip/minizip" }
+   includedirs { "source/external/zipper" }
+   includedirs { "source/external/zipper/include" }
+   includedirs { "source/external/zipper/src" }
+   includedirs { "source/external/zipper/src/utils" }
+   includedirs { "source/external/zipper/include/Zipper" }
    
    links { "Wldap32.lib" }
    links { "crypt32.lib" }
    links { "Ws2_32.lib" }
    links { "version.lib" }
-   links { "zlibstat.lib" }
-   links { "libZipper-static.lib" }
-   links { "libcurl_a.lib" }
-   defines { "CURL_STATICLIB", "WIN32" }
-   
-    prebuildcommands {
-        "msbuild ../build/libZipper.sln /t:zlibstat /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32",
-        "msbuild ../build/libZipper.sln /t:libZipper-static /p:Configuration=ReleaseWithoutAsm /p:Platform=Win32",
-        "cd ../external/curl/",
-		"call buildconf.bat",
-		"cd winbuild",
-        "nmake /f Makefile.vc mode=static RTLIBCFG=static ENABLE_IDN=no"
-    }
+   links { "cpr.lib" }
+   defines { "_CRT_SECURE_NO_WARNINGS", "USE_WINDOWS", "_WINDOWS", "_CRT_NONSTDC_NO_DEPRECATE", "NOMAIN" }
+
+  filter { "platforms:Win32", "configurations:Debug" }
+    includedirs { "source/external/cpr_x86-windows-static/include" }
+    includedirs { "source/external/curl_x86-windows-static/include" }
+    includedirs { "source/external/zlib_x86-windows-static/include" }
+    libdirs { "source/external/cpr_x86-windows-static/debug/lib" }
+    libdirs { "source/external/curl_x86-windows-static/debug/lib" }
+    libdirs { "source/external/zlib_x86-windows-static/debug/lib" }
+    links { "libcurl-d.lib" }
+    links { "zlibd.lib" }
+
+  filter { "platforms:Win32", "configurations:Release" }
+    includedirs { "source/external/cpr_x86-windows-static/include" }
+    includedirs { "source/external/curl_x86-windows-static/include" }
+    includedirs { "source/external/zlib_x86-windows-static/include" }
+    libdirs { "source/external/cpr_x86-windows-static/lib" }
+    libdirs { "source/external/curl_x86-windows-static/lib" }
+    libdirs { "source/external/zlib_x86-windows-static/lib" }
+    links { "libcurl.lib" }
+    links { "zlib.lib" }
+
+  filter { "platforms:x64", "configurations:Debug" }
+    includedirs { "source/external/cpr_x64-windows-static/include" }
+    includedirs { "source/external/curl_x64-windows-static/include" }
+    includedirs { "source/external/zlib_x64-windows-static/include" }
+    libdirs { "source/external/cpr_x64-windows-static/debug/lib" }
+    libdirs { "source/external/curl_x64-windows-static/debug/lib" }
+    libdirs { "source/external/zlib_x64-windows-static/debug/lib" }
+    links { "libcurl-d.lib" }
+    links { "zlibd.lib" }
+
+  filter { "platforms:x64", "configurations:Release" }
+    includedirs { "source/external/cpr_x64-windows-static/include" }
+    includedirs { "source/external/curl_x64-windows-static/include" }
+    includedirs { "source/external/zlib_x64-windows-static/include" }
+    libdirs { "source/external/cpr_x64-windows-static/lib" }
+    libdirs { "source/external/curl_x64-windows-static/lib" }
+    libdirs { "source/external/zlib_x64-windows-static/lib" }
+    links { "libcurl.lib" }
+    links { "zlib.lib" }
 
 project "UpdaterApp"
    kind "ConsoleApp"
    language "C++"
    targetdir "bin/%{cfg.buildcfg}"
-   targetname "modupdater"
+   targetname "modupdater%{cfg.architecture}"
    targetextension ".exe"
-   characterset ("MBCS")
-   flags { "StaticRuntime" }
-   buildoptions {"-std:c++latest"}
+   staticruntime "On"
+
+   defines { "EXECUTABLE" }
 
    filter "configurations:Debug"
       defines { "DEBUG" }
       symbols "On"
-      flags { "StaticRuntime" }
 
    filter "configurations:Release"
       defines { "NDEBUG" }
@@ -75,11 +111,12 @@ project "UpdaterPlugin"
    kind "SharedLib"
    language "C++"
    targetdir "bin/%{cfg.buildcfg}"
-   targetname "modupdater"
+   targetname "modupdater%{cfg.architecture}"
    targetextension ".asi"
-   characterset ("MBCS")
-   flags { "StaticRuntime" }
-   buildoptions {"-std:c++latest"}
+
+   staticruntime "On"
+
+   defines { "DYNAMICLIB" }
 
    filter "configurations:Debug"
       defines { "DEBUG" }
@@ -93,14 +130,14 @@ project "UpdaterPlugin"
 project "UpdaterLib"
    kind "StaticLib"
    language "C++"
-   targetdir "bin/%{cfg.buildcfg}"
-   targetname "modupdater"
+   targetdir "dist"
+   targetname "libmodupdater_%{cfg.shortname}"
    targetextension ".lib"
-   characterset ("MBCS")
-   flags { "StaticRuntime" }
-   buildoptions {"-std:c++latest"}
+   staticruntime "On"
    
    excludes { "source/Includes/Resources/*.rc" }
+
+   defines { "STATICLIB" }
 
    filter "configurations:Debug"
       defines { "DEBUG" }
@@ -109,70 +146,77 @@ project "UpdaterLib"
    filter "configurations:Release"
       defines { "NDEBUG" }
       optimize "On"
-      
--- libZipper
-workspace "libZipper"
-   configurations { "ReleaseWithoutAsm", "Debug" }
+
+
+workspace "test"
+   configurations { "Release", "Debug" }
+   platforms { "Win32", "x64" }
    location "build"
-   ignoredefaultlibraries { "MSVCRT" }
+   cppdialect "C++latest"
+   characterset ("UNICODE")
    
-project "zlibstat"
-   kind "StaticLib"
+   includedirs { "dist" }
+   libdirs { "dist" }
+   links { "libmodupdater_%{cfg.shortname}.lib" }
+   
+   files { "libmodupdater.h" }
+   files { "source/resources/*.rc" }
+   files { "source/test/main.cpp" }
+
+   defines { "rsc_CompanyName=\"ThirteenAG\"" }
+   defines { "rsc_LegalCopyright=\"MIT License\""} 
+   defines { "rsc_FileVersion=\"1.0.0.0\"", "rsc_ProductVersion=\"1.0.0.0\"" }
+   defines { "rsc_InternalName=\"%{wks.name}\"", "rsc_ProductName=\"%{wks.name}\"", "rsc_OriginalFilename=\"%{wks.name}.asi\"" }
+   defines { "rsc_FileDescription=\"%{wks.name}\"" }
+   defines { "rsc_UpdateUrl=\"https://github.com/ThirteenAG/modupdater\"" }
+
+project "TestApp"
+   dependson { "TestDLL1", "TestDLL2" }
+   kind "ConsoleApp"
    language "C++"
-   targetdir "source/Includes/Libs"
-   targetextension ".lib"
-   
-   files { "external/zlib/*.h", "external/zlib/*.c" }
-   files { "external/zlib/contrib/vstudio/vc14/zlib.rc" }
-   files { "external/zlib/contrib/vstudio/vc14/zlibvc.def" }
-   removefiles { "inffas8664.c" }
-      
-   defines { "WIN32;_CRT_NONSTDC_NO_DEPRECATE;_CRT_SECURE_NO_DEPRECATE;_CRT_NONSTDC_NO_WARNINGS;" }
-   
-   characterset ("MBCS")
+   targetdir "bin/%{cfg.buildcfg}"
+   targetname "TestApp"
+   targetextension ".exe"
+   staticruntime "On"
 
    filter "configurations:Debug"
       defines { "DEBUG" }
       symbols "On"
 
-   filter "configurations:ReleaseWithoutAsm"
+   filter "configurations:Release"
       defines { "NDEBUG" }
       optimize "On"
-      flags { "StaticRuntime" }
-      
-project "libZipper-static"
-   kind "StaticLib"
-   language "C++"
-   targetdir "source/Includes/Libs"
-   targetextension ".lib"
-   
-   files { "external/zipper/zipper/*.h", "external/zipper/zipper/*.cpp" }
-   files { "external/zipper/minizip/crypt.h" }
-   files { "external/zipper/minizip/ioapi.h" }
-   files { "external/zipper/minizip/ioapi_buf.h" }
-   files { "external/zipper/minizip/ioapi_mem.h" }
-   files { "external/zipper/minizip/iowin32.h" }
-   files { "external/zipper/minizip/unzip.h" }
-   files { "external/zipper/minizip/zip.h" }
-   files { "external/zipper/minizip/ioapi.c" }
-   files { "external/zipper/minizip/ioapi_buf.c" }
-   files { "external/zipper/minizip/ioapi_mem.c" }
-   files { "external/zipper/minizip/iowin32.c" }
-   files { "external/zipper/minizip/unzip.c" }
-   files { "external/zipper/minizip/zip.c" }
-   includedirs { "external/zipper/minizip" }
-   includedirs { "external/zlib/" }
-   includedirs { "external/zipper/zipper" }
-      
-   defines { "WIN32;_WINDOWS;NDEBUG;USE_ZLIB;_CRT_SECURE_NO_WARNINGS;_CRT_NONSTDC_NO_DEPRECATE;" }
 
-   characterset ("MBCS")
-   
+project "TestDLL1"
+   kind "SharedLib"
+   language "C++"
+   targetdir "bin/%{cfg.buildcfg}"
+   targetname "TestDLL1"
+   targetextension ".asi"
+
+   staticruntime "On"
+
    filter "configurations:Debug"
       defines { "DEBUG" }
       symbols "On"
 
-   filter "configurations:ReleaseWithoutAsm"
+   filter "configurations:Release"
       defines { "NDEBUG" }
       optimize "On"
-      flags { "StaticRuntime" }
+
+project "TestDLL2"
+   kind "SharedLib"
+   language "C++"
+   targetdir "bin/%{cfg.buildcfg}"
+   targetname "TestDLL2"
+   targetextension ".asi"
+
+   staticruntime "On"
+
+   filter "configurations:Debug"
+      defines { "DEBUG" }
+      symbols "On"
+
+   filter "configurations:Release"
+      defines { "NDEBUG" }
+      optimize "On"

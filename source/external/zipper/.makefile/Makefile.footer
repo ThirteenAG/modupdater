@@ -1,0 +1,295 @@
+# -*- mode: makefile -*-
+##==================================================================================
+## MIT License
+##
+## Copyright (c) 2019 Quentin Quadrat <lecrapouille@gmail.com>
+##
+## Permission is hereby granted, free of charge, to any person obtaining a copy
+## of this software and associated documentation files (the "Software"), to deal
+## in the Software without restriction, including without limitation the rights
+## to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+## copies of the Software, and to permit persons to whom the Software is
+## furnished to do so, subject to the following conditions:
+##
+## The above copyright notice and this permission notice shall be included in all
+## copies or substantial portions of the Software.
+##
+## THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+## IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+## FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+## AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+## LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+## OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+## SOFTWARE.
+##==================================================================================
+
+include $(M)/Makefile.flags
+
+###################################################
+# Download private thirdparts
+#
+ifeq ($(USE_BACKWARD),1)
+ifeq ($(ARCHI),Darwin)
+backward.cpp: | $(BUILD)
+else
+$(BUILD)/backward-cpp/backward.cpp: | $(BUILD)
+	@$(call GIT_CLONE_NO_RECURSE,$(BUILD),"bombela","backward-cpp")
+endif
+endif
+
+ifeq ($(USE_DEBUG_MACRO),1)
+$(TARGET): $(BUILD)/dbg-macro/dbg.h
+$(BUILD)/dbg-macro/dbg.h: | $(BUILD)
+	@$(call GIT_CLONE_NO_RECURSE,$(BUILD),"sharkdp","dbg-macro")
+endif
+
+###################################################
+# Link sources
+#
+ifneq ($(EXT),)
+$(TARGET): $(TARGET)$(EXT)
+endif
+
+$(TARGET)$(EXT): $(OBJS) $(THIRDPART_OBJS) $(THIRDPART_LIBS)
+	@$(call print-to,"Linking","$(TARGET)","$(BUILD)/$@","$(VERSION)")
+ifeq ($(OBJS),)
+	$(ECHO_COLOR) "$(CLR_RED)You are compiling an application but OBJS is empty$(CLR_DEFAULT)" && exit 1
+endif
+ifeq ($(ARCHI),Darwin)
+	$(Q)cd $(BUILD) && $(COMPILER) $(LDFLAGS) $(OBJS) $(THIRDPART_OBJS) -o $(TARGET) $(THIRDPART_LIBS) $(NOT_PKG_LIBS) $(PKGCFG_LIBS) $(LINKER_FLAGS)
+ifneq ($(BUILD_MACOS_APP_BUNDLE),)
+	$(Q)$(call CREATE_MACOS_APP_BUNDLE,$(BUILD)/$(TARGET)$(EXT))
+endif
+else
+	$(Q)cd $(BUILD) && $(COMPILER) $(LDFLAGS) $(OBJS) $(THIRDPART_OBJS) -o $(TARGET)$(EXT) $(THIRDPART_LIBS) $(NOT_PKG_LIBS) $(PKGCFG_LIBS) $(LINKER_FLAGS)
+ifneq ($(STRIP),)
+	@$(call print-to,"Stripping","$(TARGET)","$(BUILD)/$@","$(VERSION)")
+	$(Q)cd $(BUILD) && $(STRIP) $(TARGET)$(EXT)
+endif
+endif
+
+
+###################################################
+# Compile C++ sources. Note: abspath is needed for gcov
+#
+%.o: %$(CXX_SUFFIX) $(BUILD)/%.d $(MYMAKEFILES) $(PROJECT_INFO)
+	@$(call print-progress,"Compiling","$(TARGET)","$<")
+	$(Q)$(CXX) $(STANDARD) $(DEPFLAGS) $(CXXFLAGS) $(PKGCFG_CFLAGS) $(OPTIM_FLAGS) $(DEFINES) $(INCLUDES) -c $(abspath $<) -o $(abspath $(BUILD)/$@) $(COMPIL_FLAGS)
+	@$(POSTCOMPILE)
+
+###################################################
+# Compile C sources. Note: abspath is needed for gcov
+#
+%.o: %$(CC_SUFFIX) $(BUILD)/%.d $(MYMAKEFILES) $(PROJECT_INFO)
+	@$(call print-progress,"Compiling","$(TARGET)","$<")
+	$(Q)$(CC) $(DEPFLAGS) $(CCFLAGS) $(PKGCFG_CFLAGS) $(OPTIM_FLAGS) $(DEFINES) $(INCLUDES) -c $(abspath $<) -o $(abspath $(BUILD)/$@) $(COMPIL_FLAGS)
+	@$(POSTCOMPILE)
+
+###################################################
+# Static library
+#
+$(STATIC_LIB_TARGET): $(LIB_OBJS) $(THIRDPART_OBJS) $(THIRDPART_LIBS)
+ifeq ($(LIB_OBJS),)
+	echo "LIB_OBJS is empty and you requested to created a static lib" && exit 1
+endif
+	@$(call print-to,"Static lib","$(TARGET)","$(BUILD)/$@","$(VERSION)")
+ifneq ($(THIRDPART_LIBS),)
+	@./$(M)/alib.sh $(BUILD) $(THIRDPART_LIBS)
+	$(Q)cd $(BUILD) && $(AR) $(ARFLAGS) $@ $(LIB_OBJS) $(THIRDPART_OBJS) _lib*/*.o && ranlib $@
+else
+	$(Q)cd $(BUILD) && $(AR) $(ARFLAGS) $@ $(LIB_OBJS) $(THIRDPART_OBJS) && ranlib $@
+endif
+	$(Q)cd $(BUILD) && cp $@ $(STATIC_LIB_TARGET_NOVERSION)
+
+###################################################
+# Shared library
+#
+$(SHARED_LIB_TARGET): LDFLAGS += $(DLL_LDFLAGS)
+$(SHARED_LIB_TARGET): $(LIB_OBJS) $(THIRDPART_OBJS) $(THIRDPART_LIBS)
+ifeq ($(LIB_OBJS),)
+	echo "LIB_OBJS is empty and you requested to created a shared lib" && exit 1
+endif
+	@$(call print-to,"Shared lib","$(TARGET)","$(BUILD)/$@","$(VERSION)")
+	$(Q)cd $(BUILD) && $(COMPILER) $(LDFLAGS) -o $@ $(LIB_OBJS) $(THIRDPART_OBJS) $(LINK_ALL_LOAD) $(THIRDPART_LIBS) $(NOT_PKG_LIBS) $(PKGCFG_LIBS) $(LINK_NO_ALL_LOAD) $(LINKER_FLAGS)
+	$(Q)cd $(BUILD) && cp $@ $(SHARED_LIB_TARGET_NOVERSION)
+
+###################################################
+# Generate the pkg-config file
+#
+$(PKG_FILE): | $(PROJECT_INFO)
+$(PKG_FILE): $(MYMAKEFILES) VERSION.txt
+	@$(call CREATE_PKG_CONFIG,$(PKG_FILE))
+
+.PHONY: pkg-config
+pkg-config:
+	@$(call CREATE_PKG_CONFIG,$(PKG_FILE))
+
+###################################################
+# Download external github code source needed by this project.
+.PHONY: download-external-libs
+download-external-libs:
+	@$(call print-to,"Downloading third parts","$(TARGET)","$(THIRDPART)")
+	@if [ -e "$(THIRDPART)/download-external-libs.sh" ] ; then \
+	(cd $(THIRDPART) && ./download-external-libs.sh "$(ARCHI)" "$(TARGET)"); \
+	else \
+	$(ECHO_COLOR) "  $(CLR_YELLOW):( $(CLR_CYAN)Missing file $(THIRDPART)/download-external-libs.sh $(CLR_YELLOW):("; \
+	$(ECHO_COLOR) "  $(CLR_YELLOW):) $(CLR_CYAN)Or no external libs to download ! $(CLR_YELLOW):)$(CLR_DEFAULT)"; \
+	fi
+
+###################################################
+# Compile external projects needed.
+.PHONY: compile-external-libs
+compile-external-libs:
+	@$(call print-to,"Compiling third parts","$(TARGET)","$(THIRDPART)")
+	@if [ -e "$(THIRDPART)/compile-external-libs.sh" ] ; then \
+	(cd $(THIRDPART) && ./compile-external-libs.sh "$(ARCHI)" "$(TARGET)" "$(CC)" "$(CXX)"); \
+	else \
+	$(ECHO_COLOR) "  $(CLR_YELLOW):( $(CLR_CYAN)Missing file $(THIRDPART)/compile-external-libs.sh $(CLR_YELLOW):("; \
+	$(ECHO_COLOR) "  $(CLR_YELLOW):) $(CLR_CYAN)Or no external libs to compile ! $(CLR_YELLOW):)$(CLR_DEFAULT)"; \
+	fi
+
+###################################################
+# Run the binary
+#
+.PHONY: run
+run: $(TARGET)$(EXT)
+	@$(RUN) ./$(BUILD)/$(TARGET)$(EXT); $(ECHO_COLOR) "  $(CLR_RED)merror code: $$?$(CLR_DEFAULT)"
+
+###################################################
+# Compile, launch unit tests and generate the code coverage html report.
+# This rule is an alias for unit-tests for retro-compatibility: I initialy
+# used the name "unit-tests" and dsicovered recently that the official name
+# is "check".
+#
+.PHONY: unit-tests
+unit-tests: check
+
+###################################################
+# Create an uploadable tarball for the OpenSuse Build Service (OBS).
+.PHONY: obs
+obs:
+	@./.integration/opensuse-build-service.sh
+
+###################################################
+# Check if your project is harden
+.PHONY: check-harden
+check-harden: $(TARGET)
+	@hardening-check ./$(BUILD)/$(TARGET); echo -n ""
+ifeq ($(BUILD_TYPE),debug)
+	@echo " Project compiled in debug mode"
+endif
+
+###################################################
+# Launch the executable with address sanitizer (if enabled).
+.PHONY: asan
+asan: $(TARGET)
+	@$(SANITIZER) ./$(BUILD)/$(TARGET) 2>&1 | ./$(THIRDPART)/asan_symbolize.py
+
+###################################################
+# Launch the executable with gprof.
+.PHONY: gprof
+gprof: $(TARGET)
+	@mkdir -p $(GENDOC)/gprof
+	$(Q)./$(BUILD)/$(TARGET); gprof ./$(BUILD)/$(TARGET) gmon.out > $(GENDOC)/gprof/analysis.txt && \
+	echo "You can read the report: $(GENDOC)/gprof/analysis.txt"
+
+###################################################
+# Generate the code coverage html rapport.
+.PHONY: coverage
+coverage: $(TARGET)
+	@$(call print-to,"Running","$(TARGET)","$(COVERAGE_RAPPORT)","")
+	@./$(BUILD)/$(TARGET)
+	@$(call print-to,"Coverage report","$(TARGET)","$(COVERAGE_RAPPORT)","")
+	@mkdir -p $(COVERAGE_DIR)
+	@gcovr -r $(P) --html-details $(COVERAGE_RAPPORT) -e '/usr/*' -e $(THIRDPART)
+	@xdg-open $(COVERAGE_RAPPORT) >/dev/null
+
+###################################################
+# For using this service, you have to download and install
+# a gcc wrapper and compile your project back. A tarball
+# should be created and you have to upload it to their webpage.
+# See https://scan.coverity.com/ for more infos.
+#
+# Create a tarball for Coverity Scan a static analysis of code.
+.PHONY: coverity-scan
+coverity-scan: clean
+	@rm -fr $(TARGET).tgz cov-int 2> /dev/null
+	@cov-build --dir cov-int $(MAKE) && tar czvf $(TARGET).tgz cov-int
+
+###################################################
+# Note: Please be sure Doxyfile use the same output directory than $(GENDOC)
+# Generate the code source documentation with doxygen.
+.PHONY: doc
+doc:
+	@$(call RULE_CREATE_DOXYFILES)
+	@doxygen Doxyfile
+	@xdg-open $(GENDOC)/html/index.html >/dev/null
+
+###################################################
+# Compress project sources without its .git, $BUILD
+# and $GENDOC generated files. Tarball name conflict is
+# managed: if a tarball already exists, the older will
+# stay intact and a new one is created.
+#
+# Create a backup of the code as a tarball file.
+.PHONY: tarball
+tarball:
+	@./$(M)/targz.sh $(PWD) $(TARGET)
+
+###################################################
+# Generate a header file with the project information.
+$(PROJECT_INFO): VERSION.txt
+	@$(call print-from,"Version","$(TARGET)","VERSION.txt","")
+	@echo "PROJECT=$(PROJECT)" > $(BUILD)/project_info.txt
+	@echo "TARGET=$(TARGET)" >> $(BUILD)/project_info.txt
+	@echo "PROJECT_DATA_PATH=$(PROJECT_DATA_PATH)" >> $(BUILD)/project_info.txt
+	@echo "PROJECT_TEMP_DIR=$(PROJECT_TEMP_DIR)" >> $(BUILD)/project_info.txt
+	@echo "BUILD_TYPE=$(BUILD_TYPE)" >> $(BUILD)/project_info.txt
+	@./$(M)/config.sh $(P)/VERSION.txt $(BUILD)
+
+###################################################
+# Create a Version file if not present
+#
+VERSION.txt:
+	echo "0.1.0" > VERSION.txt
+
+###################################################
+# Display the compiler version and information.
+.PHONY: which-compiler
+which-compiler:
+	@$(call print-simple,"Compiler","$(COMPILER)")
+	@$(COMPILER) --version
+
+###################################################
+# Display the description of the project
+.PHONY: about
+about:
+	@$(call print-to,"About","$(TARGET)","$(DESCRIPTION)")
+
+###################################################
+# Clean the project
+.PHONY: clean
+clean::
+	@$(call print-simple,"Cleaning","$(PWD)")
+	@rm -fr $(BUILD) $(GENDOC)/coverage $(GENDOC)/html $(GENDOC)/gprof 2> /dev/null
+
+###################################################
+# Create a temporary folder to store *.o and *.d files
+#
+$(DEPFILES): | $(BUILD)
+$(PKG_FILE): | $(BUILD)
+$(OBJS) $(LIB_OBJS): | $(PROJECT_INFO)
+$(PROJECT_INFO): | $(BUILD) VERSION.txt
+which-compiler: | about
+$(BUILD): about which-compiler
+	@mkdir -p $(BUILD)
+
+###################################################
+# Auto-Dependency Generation
+#
+$(BUILD)/%.d: ;
+.PRECIOUS: $(BUILD)/%.d
+
+-include $(patsubst %,$(BUILD)/%.d,$(basename $(OBJS)) $(basename $(LIB_OBJS)) $(basename $(THIRDPART_OBJS)))
+
+include $(M)/Makefile.help

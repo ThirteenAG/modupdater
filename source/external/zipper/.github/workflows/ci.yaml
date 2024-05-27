@@ -1,0 +1,138 @@
+name: Non regression tests for Zipper
+on:
+  workflow_dispatch:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+
+  #############################################################################
+  ### Linux
+  #############################################################################
+  non_regression_linux:
+    name: Non regression on Linux
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout Zipper
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install pkg-config lcov libdw-dev ninja-build
+      - name: Download, configure and install Google test
+        run: |
+          wget https://github.com/google/googletest/archive/release-1.11.0.tar.gz
+          tar xf release-1.11.0.tar.gz
+          cd googletest-release-1.11.0
+          cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON .
+          sudo make install
+      - name: Build Zipper
+        run: |
+          V=1 make download-external-libs
+          V=1 make compile-external-libs
+          V=1 make -j`nproc --all`
+          V=1 make demos -j`nproc --all`
+      - name: Installation
+        run: |
+          sudo make install
+      - name: Non regression
+        run: |
+          cd tests
+          V=1 make -j`nproc --all`
+          ./build/Zipper-UnitTest
+      - name: Check the demo
+        run: |
+          cd doc/demos/Unzipper
+          echo "1234" | ./build/demo_unzip -p -f -o /tmp ../../../tests/issues/issue_05_password.zip
+          ls /tmp/issue_05/foo/bar /tmp/issue_05/Nouveau\ dossier/ /tmp/issue_05/Nouveau\ fichier\ vide
+      - name: Check if the library can be linked against a project
+        run: |
+          echo `pkg-config --cflags zipper`
+          export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
+          git clone https://github.com/Lecrapouille/LinkAgainstMyLibs.git --recurse-submodules --depth=1
+          cd LinkAgainstMyLibs/Zipper
+          V=1 make -j`nproc --all`
+          ./build/Zipper
+          ls ziptest.zip /tmp/somefile.txt
+          cat /tmp/somefile.txt
+
+  #############################################################################
+  ### MacOS X
+  #############################################################################
+  non_regression_macos:
+    name: Non regression on MacOS X
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Zipper
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Install system packages
+        run: |
+          brew install pkg-config ninja
+      - name: Download, configure and install Google test
+        run: |
+          wget https://github.com/google/googletest/archive/release-1.11.0.tar.gz
+          tar xf release-1.11.0.tar.gz
+          cd googletest-release-1.11.0
+          cmake -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON .
+          sudo make install
+      - name: Build Zipper
+        run: |
+          V=1 make download-external-libs
+          V=1 make compile-external-libs
+          V=1 make -j`sysctl -n hw.logicalcpu`
+# FIXME https://github.com/Lecrapouille/zipper/issues/10
+#          make demos -j`sysctl -n hw.logicalcpu`
+      - name: Non regression
+        run: |
+          cd tests
+          V=1 make -j`nproc --all`
+          ./build/Zipper-UnitTest
+# FIXME https://github.com/Lecrapouille/zipper/issues/10
+#      - name: Check the demo
+#        run: |
+#          cd doc/demos/Unzipper
+#          echo "1234" | ./build/demo_unzip -p -f -o /tmp ../../../tests/issues/issue_05_password.zip
+#          ls /tmp/issue_05/foo/bar /tmp/issue_05/Nouveau\ dossier/ /tmp/issue_05/Nouveau\ fichier\ vide
+#      - name: Check if the library can be linked against a project
+#        run: |
+#          git clone https://github.com/Lecrapouille/LinkAgainstMyLibs.git --recurse-submodules --depth=1
+#          cd LinkAgainstMyLibs/Zipper
+#          V=1 make -j`nproc --all`
+#          ./build/Zipper
+#          ls ziptest.zip /tmp/somefile.txt
+#          cat /tmp/somefile.txt
+
+  #############################################################################
+  ### Windows
+  #############################################################################
+#  non_regression_windows:
+#    name: Non regression on Windows
+#    runs-on: windows-2022
+#    steps:
+#      - name: Add path for finding cl.exe
+#        uses: ilammy/msvc-dev-cmd@v1.10.0
+#      - name: Checkout Zipper
+#        uses: actions/checkout@v3
+#        with:
+#          submodules: true
+#      - name: Build Zipper
+#        shell: powershell
+#        run: |
+#          make download-external-libs
+#          make compile-external-libs
+#          make -j1
+#      - name: Non regression
+#        run: |
+#          cd build
+#          Test-Path -Path \a\zipper\build\libzipper.a.2.0.0
+#          Test-Path -Path \a\zipper\build\libzipper.dll.2.0
