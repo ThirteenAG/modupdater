@@ -1263,7 +1263,7 @@ void ProcessFiles()
         auto szFileSize = std::get<3>(RemoteInfo);
         FilesPresent.push_back(strFileName);
 
-        if (nRemoteFileUpdatedHoursAgo != -1 && !szDownloadURL.empty())
+        if (nRemoteFileUpdatedHoursAgo != -1 && !szDownloadURL.empty() && !szFileSize.empty())
         {
             if (nRemoteFileUpdatedHoursAgo < nLocaFileUpdatedHoursAgo || bAlwaysUpdate)
             {
