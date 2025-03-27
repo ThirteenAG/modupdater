@@ -4,6 +4,7 @@
 #include "ModuleList.hpp"
 #include "libmodupdater.h"
 
+constexpr auto maxContentLength = 255;
 constexpr auto mtxName = L"MODUPDATER-0TAPXVW8TY18N5SEP5CW7I4UE1FKOJ";
 constexpr auto mtxNameAsi = L"MODUPDATERASI-0TAPXVW8TY18N5SEP5CW7I4UE1FKOJ";
 std::atomic<HANDLE> muMutexHandle = NULL;
@@ -314,19 +315,37 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
         return wstr.first == wszDownloadURL;
     });
 
-    if (itr != downloads.end())
+    static int lastProgress = 0;
+    auto progressCallback = [&wszDownloadName](cpr::cpr_pf_arg_t downloadTotal, cpr::cpr_pf_arg_t downloadNow, cpr::cpr_pf_arg_t uploadTotal, cpr::cpr_pf_arg_t uploadNow, intptr_t userdata) -> bool
     {
-        r.status_code = 200;
-        r.text = itr->second;
+        if (downloadTotal > 0)
+        {
+            int progress = static_cast<int>((downloadNow * 100) / downloadTotal);
+            if (progress != lastProgress)
+            {
+                lastProgress = progress;
+                SendMessage(DialogHwnd, TDM_SET_PROGRESS_BAR_POS, progress, 0);
+                std::wostringstream oss;
+                oss << L"Downloading " << wszDownloadName << L": " << progress << L" % ";
+                messagesBuffer = oss.str();
+            }
+        }
+        return true;
+    };
+
+    if (token.empty())
+    {
+        r = cpr::Get(cpr::Url{ toString(wszDownloadURL) },
+            cpr::ProgressCallback{ progressCallback });
     }
     else
     {
-        if (token.empty())
-            r = cpr::Get(cpr::Url{ toString(wszDownloadURL) });
-        else
-            r = cpr::Get(cpr::Url{ toString(wszDownloadURL) }, cpr::Header{ {"Authorization", "Bearer " + token} });
+        r = cpr::Get(cpr::Url{ toString(wszDownloadURL) },
+            cpr::Header{ {"Authorization", "Bearer " + token} },
+            cpr::ProgressCallback{ progressCallback });
         downloads.push_back(std::make_pair(wszDownloadURL, r.text));
     }
+    lastProgress = 0;
 
     if (r.status_code == 200)
     {
@@ -552,16 +571,18 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
             DialogHwnd = hwnd;
             if (dwRefData == 1)
             {
-                SendMessage(hwnd, TDM_SET_MARQUEE_PROGRESS_BAR, 1, 0);
-                SendMessage(hwnd, TDM_SET_PROGRESS_BAR_MARQUEE, 1, 0);
+                SendMessage(hwnd, TDM_SET_MARQUEE_PROGRESS_BAR, FALSE, 0);
+                SendMessage(hwnd, TDM_SET_PROGRESS_BAR_RANGE, 0, MAKELPARAM(0, 100));
+                SendMessage(hwnd, TDM_SET_PROGRESS_BAR_POS, 0, 0);
             }
             else
             {
+                SendMessage(hwnd, TDM_SET_MARQUEE_PROGRESS_BAR, FALSE, 0);
+                SendMessage(hwnd, TDM_SET_PROGRESS_BAR_RANGE, 0, MAKELPARAM(0, 100));
+                SendMessage(DialogHwnd, TDM_SET_PROGRESS_BAR_POS, 100, 0);
+
                 if (dwRefData == 2)
                 {
-                    SendMessage(DialogHwnd, TDM_SET_MARQUEE_PROGRESS_BAR, FALSE, 0);
-                    SendMessage(DialogHwnd, TDM_SET_PROGRESS_BAR_POS, 100, 0);
-
                     if (muSkipUpdateCompleteDialog)
                         SendMessage(DialogHwnd, TDM_CLICK_BUTTON, static_cast<WPARAM>(TDCBF_OK_BUTTON), 0);
                 }
@@ -574,7 +595,9 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
         case TDN_TIMER:
             if (dwRefData == 1)
             {
-                messagesBuffer.resize(55);
+                messagesBuffer.resize(maxContentLength);
+                std::wstring indent(maxContentLength - messagesBuffer.length(), L' ');
+                messagesBuffer += indent;
                 SendMessage(DialogHwnd, TDM_UPDATE_ELEMENT_TEXT, TDE_CONTENT, (LPARAM)messagesBuffer.c_str());
             }
             break;
@@ -721,7 +744,7 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
     tdc.pszFooter = L""; // wszFooter.c_str();
     tdc.pszFooterIcon = TD_INFORMATION_ICON;
     tdc.pfCallback = TaskDialogCallbackProc;
-    tdc.lpCallbackData = 0;
+    tdc.lpCallbackData = 3;
     auto nClickedBtnID = -1;
     auto nRadioBtnID = -1;
     auto bCheckboxChecked = 0;
@@ -750,17 +773,22 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
             { BUTTONID3, L"Cancel" }
         };
 
+        std::wstring content(L"Preparing to download...");
+        std::wstring indent(maxContentLength - content.length(), L' ');
+        content += indent;
+
         tdc.pButtons = aCustomButtons2;
         tdc.cButtons = _countof(aCustomButtons2);
         //tdc.pszMainIcon = TD_INFORMATION_ICON;
         tdc.dwFlags |= TDF_SHOW_MARQUEE_PROGRESS_BAR;
         tdc.dwFlags |= TDF_CALLBACK_TIMER;
         tdc.pszMainInstruction = L"Downloading Update...";
-        tdc.pszContent = L"Preparing to download...";
+        tdc.pszContent = content.data();
         tdc.pszVerificationText = L"";
         tdc.pRadioButtons = NULL;
         tdc.cRadioButtons = NULL;
         tdc.lpCallbackData = 1;
+        tdc.cxWidth = 200;
 
         std::atomic_bool bCanceledorError = false;
         std::thread t([&FilesToUpdate, &FilesToDownload, &bCheckboxChecked, &bCanceledorError, &nRadioBtnID, &nClickedBtnID]
@@ -811,6 +839,7 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
                 tdc.pszMainInstruction = L"Update completed succesfully.";
                 tdc.pszContent = L"";
                 tdc.lpCallbackData = 2;
+                tdc.cxWidth = 0;
                 tdc.dwFlags |= TDF_CALLBACK_TIMER;
 
                 hr = TaskDialogIndirect(&tdc, &nClickedBtnID, nullptr, nullptr);
