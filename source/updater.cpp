@@ -595,7 +595,8 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
         case TDN_TIMER:
             if (dwRefData == 1)
             {
-                messagesBuffer.resize(maxContentLength);
+                if (messagesBuffer.length() > maxContentLength)
+                    messagesBuffer.resize(maxContentLength);
                 std::wstring indent(maxContentLength - messagesBuffer.length(), L' ');
                 messagesBuffer += indent;
                 SendMessage(DialogHwnd, TDM_UPDATE_ELEMENT_TEXT, TDE_CONTENT, (LPARAM)messagesBuffer.c_str());
@@ -773,7 +774,8 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
             { BUTTONID3, L"Cancel" }
         };
 
-        std::wstring content(L"Preparing to download...");
+        static std::wstring content;
+        content = L"Preparing to download...";
         std::wstring indent(maxContentLength - content.length(), L' ');
         content += indent;
 
