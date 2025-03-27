@@ -5,8 +5,10 @@
 #include <fstream>
 #include <functional>
 #include <future>
+#include <list>
 #include <memory>
-#include <queue>
+#include <optional>
+#include <variant>
 
 #include "cpr/accept_encoding.h"
 #include "cpr/async_wrapper.h"
@@ -44,6 +46,7 @@
 namespace cpr {
 
 using AsyncResponse = AsyncWrapper<Response>;
+using Content = std::variant<std::monostate, cpr::Payload, cpr::Body, cpr::Multipart>;
 
 class Interceptor;
 class MultiPerform;
@@ -52,11 +55,11 @@ class Session : public std::enable_shared_from_this<Session> {
   public:
     Session();
     Session(const Session& other) = delete;
-    Session(Session&& old) = default;
+    Session(Session&& old) = delete;
 
     ~Session() = default;
 
-    Session& operator=(Session&& old) noexcept = default;
+    Session& operator=(Session&& old) noexcept = delete;
     Session& operator=(const Session& other) = delete;
 
     void SetUrl(const Url& url);
@@ -64,6 +67,8 @@ class Session : public std::enable_shared_from_this<Session> {
     void SetParameters(Parameters&& parameters);
     void SetHeader(const Header& header);
     void UpdateHeader(const Header& header);
+    [[nodiscard]] Header& GetHeader();
+    [[nodiscard]] const Header& GetHeader() const;
     void SetTimeout(const Timeout& timeout);
     void SetConnectTimeout(const ConnectTimeout& timeout);
     void SetAuth(const Authentication& auth);
@@ -107,6 +112,17 @@ class Session : public std::enable_shared_from_this<Session> {
     void SetAcceptEncoding(const AcceptEncoding& accept_encoding);
     void SetAcceptEncoding(AcceptEncoding&& accept_encoding);
     void SetLimitRate(const LimitRate& limit_rate);
+
+    /**
+      * Returns a reference to the content sent in previous request.
+      **/
+    [[nodiscard]] const Content& GetContent() const;
+
+    /**
+      * Removes the content sent in previous request from internal state, so it will not be sent with the next request.
+      * Call this before doing a request that is specified not to send a body, e.g. GET.
+      **/
+    void RemoveContent();
 
     // For cancellable requests
     void SetCancellationParam(std::shared_ptr<std::atomic_bool> param);
@@ -224,14 +240,16 @@ class Session : public std::enable_shared_from_this<Session> {
 
     void AddInterceptor(const std::shared_ptr<Interceptor>& pinterceptor);
 
+    std::shared_ptr<Session> GetSharedPtrFromThis();
+
   private:
     // Interceptors should be able to call the private proceed() function
     friend Interceptor;
     friend MultiPerform;
 
 
-    bool hasBodyOrPayload_{false};
     bool chunkedTransferEncoding_{false};
+    Content content_{std::monostate{}};
     std::shared_ptr<CurlHolder> curl_;
     Url url_;
     Parameters parameters_;
@@ -239,33 +257,64 @@ class Session : public std::enable_shared_from_this<Session> {
     ProxyAuthentication proxyAuth_;
     Header header_;
     AcceptEncoding acceptEncoding_;
-    /**
-     * Will be set by the read callback.
-     * Ensures that the "Transfer-Encoding" is set to "chunked", if not overriden in header_.
-     **/
-    ReadCallback readcb_;
-    HeaderCallback headercb_;
-    WriteCallback writecb_;
-    ProgressCallback progresscb_;
-    DebugCallback debugcb_;
-    CancellationCallback cancellationcb_;
+
+
+    struct Callbacks {
+        /**
+         * Will be set by the read callback.
+         * Ensures that the "Transfer-Encoding" is set to "chunked", if not overriden in header_.
+         **/
+        ReadCallback readcb_;
+        HeaderCallback headercb_;
+        WriteCallback writecb_;
+        ProgressCallback progresscb_;
+        DebugCallback debugcb_;
+        CancellationCallback cancellationcb_;
+    };
+
+    std::unique_ptr<Callbacks> cbs_{std::make_unique<Callbacks>()};
 
     size_t response_string_reserve_size_{0};
     std::string response_string_;
     std::string header_string_;
-    std::queue<std::shared_ptr<Interceptor>> interceptors_;
+    // Container type is required to keep iterator valid on elem insertion. E.g. list but not vector.
+    using InterceptorsContainer = std::list<std::shared_ptr<Interceptor>>;
+    InterceptorsContainer interceptors_;
+    // Currently running interceptor
+    InterceptorsContainer::const_iterator current_interceptor_;
+    // Interceptor within the chain where to start with each repeated request
+    InterceptorsContainer::const_iterator first_interceptor_;
     bool isUsedInMultiPerform{false};
     bool isCancellable{false};
+
+#if SUPPORT_SSL_NO_REVOKE
+    bool sslNoRevoke_{false};
+#endif
 
     Response makeDownloadRequest();
     Response makeRequest();
     Response proceed();
-    Response intercept();
+    const std::optional<Response> intercept();
+    /**
+     * Prepares the curl object for a request with everything used by all requests.
+     **/
+    void prepareCommonShared();
+    /**
+     * Prepares the curl object for a request with everything used by all non download related requests.
+     **/
     void prepareCommon();
+    /**
+     * Prepares the curl object for a request with everything used by the download request.
+     **/
     void prepareCommonDownload();
-    void SetHeaderInternal();
-    std::shared_ptr<Session> GetSharedPtrFromThis();
+    void prepareHeader();
+    void prepareProxy();
     CURLcode DoEasyPerform();
+    void prepareBodyPayloadOrMultipart() const;
+    /**
+     * Returns true in case content_ is of type cpr::Body or cpr::Payload.
+     **/
+    [[nodiscard]] bool hasBodyOrPayload() const;
 };
 
 template <typename Then>

@@ -305,3 +305,5 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+!source/external/**

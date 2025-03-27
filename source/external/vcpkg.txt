@@ -1,0 +1,4 @@
+vcpkg install cpr:x64-windows-static
+vcpkg install cpr:x86-windows-static
+vcpkg install curl:x64-windows-static
+vcpkg install curl:x86-windows-static

@@ -8,7 +8,7 @@
 #include "cpr/response.h"
 
 namespace cpr {
-enum class [[nodiscard]] CancellationResult { failure, success, invalid_operation };
+enum class [[nodiscard]] CancellationResult{failure, success, invalid_operation};
 
 /**
  * A class template intended to wrap results of async operations (instances of std::future<T>)
@@ -38,7 +38,7 @@ class AsyncWrapper {
     // Destructor
     ~AsyncWrapper() {
         if constexpr (isCancellable) {
-            if(is_cancelled) {
+            if (is_cancelled) {
                 is_cancelled->store(true);
             }
         }

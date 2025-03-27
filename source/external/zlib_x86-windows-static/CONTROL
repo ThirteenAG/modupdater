@@ -3,5 +3,5 @@ Version: 1.3.1
 Depends: vcpkg-cmake:x64-windows
 Architecture: x86-windows-static
 Multi-Arch: same
-Abi: 57850c1b96464221955aefbc406c1ff991eaff93631fa25349f96577fe97169b
+Abi: 6ac3ebee2c8ba881a1fa40318cf6f093daa39c3e1dac9ed091790ee1e2d8075a
 Description: A compression library

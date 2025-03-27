@@ -2,7 +2,7 @@
 
 ![Zipper](doc/logo.png)
 
-[Zipper](https://github.com/lecrapouille/zipper) is a C++11 wrapper around minizip compression library. Its goal is to bring the power and simplicity of minizip to a more object-oriented/c++ user-friendly library.
+[Zipper](https://github.com/lecrapouille/zipper) is a C++11 wrapper around minizip compression library. Its goal is to bring the power and simplicity of minizip to a more object-oriented/c++ user-friendly library. Note: We are currently using C++14 because the unit tests library needs it.
 
 This project is the continuation of the original [project](https://github.com/sebastiandev/zipper/tree/v2.x.y). The original project was born out of the necessity of a compression library that would be reliable, simple, and flexible. By flexibility I mean supporting all kinds of inputs and outputs, but specifically being able to compress into memory instead of being restricted to file compression only, and using data from memory instead of just files as well.
 
@@ -480,7 +480,7 @@ Depends on:
 Two ways of running them:
 - From the root folder:
 ```shell
-make check -j`nproc --all`
+make tests -j`nproc --all`
 ```
 
 - From the tests/ folder:

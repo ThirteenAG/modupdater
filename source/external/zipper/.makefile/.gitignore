@@ -1,13 +1,3 @@
-#
-*~
-examples/*/build
-
-# Copied folder
-doc/coverage
-examples/*/build
-examples/*/*/*/build
-examples/*/tests/build
-
 # Prerequisites
 *.d
 
