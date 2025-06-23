@@ -170,6 +170,23 @@ workspace "test"
    defines { "rsc_FileDescription=\"%{wks.name}\"" }
    defines { "rsc_UpdateUrl=\"https://github.com/ThirteenAG/modupdater\"" }
 
+project "TestInstaller"
+   kind "WindowedApp"
+   language "C++"
+   targetdir "bin/%{cfg.buildcfg}"
+   targetname "TestInstallerApp"
+   targetextension ".exe"
+   staticruntime "On"
+   defines { "MUINSTALLER" }
+
+   filter "configurations:Debug"
+      defines { "DEBUG" }
+      symbols "On"
+
+   filter "configurations:Release"
+      defines { "NDEBUG" }
+      optimize "On"
+
 project "TestApp"
    dependson { "TestDLL1", "TestDLL2" }
    kind "ConsoleApp"
