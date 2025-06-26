@@ -2515,6 +2515,11 @@ namespace installer
 
                     if (!pathExists)
                     {
+                        // Ensure the new path has a trailing platform-specific slash before adding it.
+                        if (newPathStr.back() != std::filesystem::path::preferred_separator)
+                        {
+                            newPathStr += std::filesystem::path::preferred_separator;
+                        }
                         state->customPaths.push_back(newPathStr);
                     }
                     else
@@ -3495,7 +3500,12 @@ void muInitInstaller()
                     }
                 }
                 // If no equivalent path was found, add the new one.
-                state.predefinedPaths.push_back(toWString(newPathStr));
+                std::wstring pathWithSlash = toWString(newPathStr);
+                if (!pathWithSlash.empty() && pathWithSlash.back() != std::filesystem::path::preferred_separator)
+                {
+                    pathWithSlash += std::filesystem::path::preferred_separator;
+                }
+                state.predefinedPaths.push_back(pathWithSlash);
             };
 
             if (!info.begin()->second.muSteamAppID.empty())
