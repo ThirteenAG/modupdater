@@ -2462,43 +2462,88 @@ namespace installer
             else if (buttonID == baseButtonId + predefinedCount + customCount)
             {
                 // "Browse..." button selected
-                std::wstring newPath = BrowseForFolder(hwnd); // Use current dialog's HWND as parent
-                if (!newPath.empty())
+                std::wstring newPathStr = BrowseForFolder(hwnd); // Use current dialog's HWND as parent
+                if (!newPathStr.empty())
                 {
-                    // Avoid adding duplicate paths
                     bool pathExists = false;
-                    for (const auto& p : state->predefinedPaths) if (p == newPath) pathExists = true;
-                    if (!pathExists) for (const auto& p : state->customPaths) if (p == newPath) pathExists = true;
+                    std::filesystem::path newPath(newPathStr);
+
+                    // Check against predefined paths
+                    for (const auto& p : state->predefinedPaths)
+                    {
+                        try
+                        {
+                            if (std::filesystem::equivalent(newPath, std::filesystem::path(p)))
+                            {
+                                pathExists = true;
+                                break;
+                            }
+                        }
+                        catch (const std::filesystem::filesystem_error&)
+                        {
+                            if (newPath.lexically_normal() == std::filesystem::path(p).lexically_normal())
+                            {
+                                pathExists = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Check against custom paths if not already found
+                    if (!pathExists)
+                    {
+                        for (const auto& p : state->customPaths)
+                        {
+                            try
+                            {
+                                if (std::filesystem::equivalent(newPath, std::filesystem::path(p)))
+                                {
+                                    pathExists = true;
+                                    break;
+                                }
+                            }
+                            catch (const std::filesystem::filesystem_error&)
+                            {
+                                if (newPath.lexically_normal() == std::filesystem::path(p).lexically_normal())
+                                {
+                                    pathExists = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
 
                     if (!pathExists)
                     {
-                        state->customPaths.push_back(newPath);
+                        state->customPaths.push_back(newPathStr);
                     }
                     else
                     {
+                        // Path already exists, do nothing and keep the dialog open for another selection.
                         state->browseActionTaken = false;
                         state->selectedPath.clear();
-                        return S_FALSE;
+                        return S_FALSE; // Returning S_FALSE prevents the dialog from closing.
                     }
                 }
                 else
                 {
+                    // User cancelled the browse dialog.
                     state->browseActionTaken = false;
                     state->selectedPath.clear();
-                    return S_FALSE;
+                    return S_FALSE; // Keep the main selection dialog open.
                 }
 
-                state->browseActionTaken = true; // Signal to re-show the dialog
-                state->selectedPath.clear();   // Clear any previous selection
-                return S_OK; // Close current dialog, the loop will re-open it
+                state->browseActionTaken = true; // Signal to re-show the dialog with the new custom path.
+                state->selectedPath.clear();   // Clear any previous selection.
+                return S_OK; // Close current dialog; the loop in ShowPathSelectionDialog will re-open it.
             }
             else if (buttonID == IDCANCEL)
             {
                 state->selectedPath.clear();
                 state->browseActionTaken = false;
-                return S_OK; // Close dialog, user cancelled
+                return S_OK; // Close dialog, user cancelled.
             }
-            return S_FALSE; // Keep dialog open for unhandled cases (should not happen with command links)
+            return S_FALSE; // Keep dialog open for unhandled cases.
         }
         case TDN_HYPERLINK_CLICKED:
         {
@@ -3416,22 +3461,53 @@ void muInitInstaller()
 
         if (!info.empty())
         {
+            // Helper to add a path only if it's not already present in a semantically equivalent form.
+            auto addUniquePredefinedPath = [](PathSelectionDialogState& state, const std::string& newPathStr)
+            {
+                if (newPathStr.empty())
+                {
+                    return;
+                }
+
+                std::filesystem::path newPath(newPathStr);
+
+                for (const auto& existingPathWStr : state.predefinedPaths)
+                {
+                    try
+                    {
+                        // std::filesystem::equivalent is the most reliable way to check if two paths
+                        // point to the same file system object. It handles trailing slashes, symlinks, etc.
+                        if (std::filesystem::equivalent(newPath, std::filesystem::path(existingPathWStr)))
+                        {
+                            return; // Path is already in the list.
+                        }
+                    }
+                    catch (const std::filesystem::filesystem_error&)
+                    {
+                        // This can throw if a path doesn't exist.
+                        // As a fallback, we can compare the paths after normalizing them.
+                        auto p1 = newPath.lexically_normal();
+                        auto p2 = std::filesystem::path(existingPathWStr).lexically_normal();
+                        if (p1 == p2)
+                        {
+                            return; // Paths are lexically equivalent.
+                        }
+                    }
+                }
+                // If no equivalent path was found, add the new one.
+                state.predefinedPaths.push_back(toWString(newPathStr));
+            };
+
             if (!info.begin()->second.muSteamAppID.empty())
             {
                 auto gamePath = findSteamGame(info.begin()->second.muSteamAppID, info.begin()->second.muSteamAppSubfolder);
-                if (!gamePath.empty())
-                {
-                    pathState.predefinedPaths.push_back(toWString(gamePath));
-                }
+                addUniquePredefinedPath(pathState, gamePath);
             }
 
             if (!info.begin()->second.muRglAppID.empty())
             {
                 auto gamePath = findRockstarGame(info.begin()->second.muRglAppID, info.begin()->second.muRglAppSubfolder);
-                if (!gamePath.empty())
-                {
-                    pathState.predefinedPaths.emplace_back(toWString(gamePath));
-                }
+                addUniquePredefinedPath(pathState, gamePath);
             }
 
             auto installPath = ShowPathSelectionDialog(parentDialogHwnd, pathState);
