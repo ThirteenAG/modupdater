@@ -2717,6 +2717,7 @@ namespace installer
         }
 
         static std::atomic_bool bCanceledOrError = false;
+        bCanceledOrError = false; // Reset in case of a previous failed/cancelled call
 
         // Callback to update progress bar and handle cancellation
         // Capturing progressDialogHwnd by reference to set it.
@@ -3046,6 +3047,7 @@ namespace installer
         }
 
         static std::atomic_bool bCanceledOrError = false;
+        bCanceledOrError = false; // Reset in case of a previous failed/cancelled call
 
         auto TaskDialogCallbackProc = [](HWND hwnd, UINT uNotification, WPARAM wParam, LPARAM lParam, LONG_PTR dwRefData)->HRESULT
         {
@@ -3084,6 +3086,7 @@ namespace installer
             std::filesystem::path targetDir = installPath;
             int totalFiles = 0;
             int processedFiles = 0;
+            bool totalFilesDetermined = false;
 
             for (const auto& zip : embeddedZips)
             {
@@ -3114,6 +3117,7 @@ namespace installer
                     std::this_thread::sleep_for(std::chrono::seconds(2));
                 }
             }
+            totalFilesDetermined = true;
             if (totalFiles == 0 && !embeddedZips.empty())
             { // If analysis failed for all zips but zips were present
                 printToMessages(L"Error: Could not analyze any installation packages.");

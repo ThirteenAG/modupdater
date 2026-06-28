@@ -653,7 +653,7 @@ public:
         else
         {
             size_t size = static_cast<size_t>(s);
-            m_zipmem.base = new char[size];
+            m_zipmem.base = reinterpret_cast<char*>(malloc(size * sizeof(char)));
             m_zipmem.size = static_cast<uint32_t>(size);
             stream.read(m_zipmem.base, std::streamsize(size));
             if (!stream.good())
