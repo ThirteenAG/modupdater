@@ -282,6 +282,93 @@ int moveFileToRecycleBin(std::wstring file)
     return SHFileOperationW(&fileOp);
 }
 
+// Tests whether the current process has write access to a directory by creating
+// and immediately deleting a temporary file. Returns true if writable.
+bool TestWriteAccess(const std::wstring& folderPath)
+{
+    if (folderPath.empty())
+        return false;
+
+    std::filesystem::path dir(folderPath);
+    std::error_code ec;
+
+    // Try to create the directory first if it doesn't exist
+    if (!std::filesystem::exists(dir, ec))
+    {
+        std::filesystem::create_directories(dir, ec);
+        if (ec)
+            return false;
+    }
+
+    // Generate a unique temp filename
+    std::wstring tempFile = folderPath;
+    if (tempFile.back() != L'\\' && tempFile.back() != L'/')
+        tempFile += L'\\';
+    tempFile += L".modupdater_writetest_";
+    tempFile += std::to_wstring(GetCurrentProcessId());
+    tempFile += L".tmp";
+
+    HANDLE hFile = CreateFileW(tempFile.c_str(), GENERIC_WRITE, 0, NULL,
+        CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, NULL);
+    if (hFile != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(hFile);
+        // FILE_FLAG_DELETE_ON_CLOSE handles cleanup
+        return true;
+    }
+
+    DWORD err = GetLastError();
+    if (err == ERROR_ACCESS_DENIED || err == ERROR_PRIVILEGE_NOT_HELD)
+        return false;
+
+    // Try to delete any leftover test file from a previous crashed run
+    DeleteFileW(tempFile.c_str());
+    return false;
+}
+
+// Restarts the current process with elevated privileges (UAC prompt).
+// Does not return if successful; returns false if the user declined or it failed.
+bool ElevateAndRestart()
+{
+    wchar_t exePath[MAX_PATH];
+    if (!GetModuleFileNameW(NULL, exePath, MAX_PATH))
+        return false;
+
+    std::filesystem::path workingDir = std::filesystem::path(exePath).parent_path();
+
+    SHELLEXECUTEINFOW ShExecInfo = { sizeof(SHELLEXECUTEINFOW) };
+    ShExecInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+    ShExecInfo.lpVerb = L"runas";
+    ShExecInfo.lpFile = exePath;
+    ShExecInfo.lpParameters = L"";
+    ShExecInfo.lpDirectory = workingDir.c_str();
+    ShExecInfo.nShow = SW_SHOWNORMAL;
+
+    if (ShellExecuteExW(&ShExecInfo))
+    {
+        ExitProcess(0);
+        return true; // unreachable, but keeps compiler happy
+    }
+
+    return false;
+}
+
+// Removes the read-only attribute from a file so it can be overwritten/deleted.
+// Returns true if the file is now writable (or didn't exist).
+bool TryRemoveReadOnly(const std::wstring& filePath)
+{
+    DWORD attrs = GetFileAttributesW(filePath.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES)
+        return true; // File doesn't exist, no problem
+
+    if (attrs & FILE_ATTRIBUTE_READONLY)
+    {
+        if (!SetFileAttributesW(filePath.c_str(), attrs & ~FILE_ATTRIBUTE_READONLY))
+            return false;
+    }
+    return true;
+}
+
 BOOL CheckForFileLock(LPCWSTR pFilePath, bool bReleaseLock = false)
 {
     BOOL bResult = FALSE;
@@ -325,6 +412,12 @@ BOOL CheckForFileLock(LPCWSTR pFilePath, bool bReleaseLock = false)
 
     SetLastError(dwError);
     return bResult;
+}
+
+// Clearer wrapper: returns true if the file IS locked by another process.
+bool IsFileLocked(LPCWSTR pFilePath)
+{
+    return CheckForFileLock(pFilePath) == FALSE;
 }
 
 void FindFilesRecursively(const std::wstring& directory, std::function<void(std::wstring&, WIN32_FIND_DATAW)> callback, bool cancelRecursion = false)
@@ -434,9 +527,10 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
 
         std::wstring fullPath = wszFullFilePath.substr(0, wszFullFilePath.find_last_of('\\') + 1) + ((wszFileName == wszDownloadName) ? wszFileName : wszDownloadName);
 
-        if (CheckForFileLock(fullPath.c_str()) == FALSE)
+        if (IsFileLocked(fullPath.c_str()))
         {
             std::wcout << wszDownloadName << L" is locked. Renaming..." << std::endl;
+            TryRemoveReadOnly(fullPath);
             if (MoveFileW(fullPath.c_str(), std::wstring(fullPath + L".deleteonnextlaunch").c_str()))
                 std::wcout << wszDownloadName << L" was renamed to " << wszFileName + L".deleteonnextlaunch" << std::endl;
             else
@@ -536,9 +630,10 @@ void UpdateFile(std::vector<std::pair<std::wstring, std::string>>& downloads, st
 
                 if (!unpackPath.wstring().ends_with(unpackPath.preferred_separator))
                 {
-                    if (CheckForFileLock(unpackPath.c_str()) == FALSE)
+                    if (IsFileLocked(unpackPath.c_str()))
                     {
                         std::wcout << itFileName.wstring() << L" is locked. Renaming..." << std::endl;
+                        TryRemoveReadOnly(unpackPath.wstring());
                         moveFileToRecycleBin(std::wstring(unpackPath.wstring() + L".deleteonnextlaunch").c_str());
                         if (MoveFileW(unpackPath.c_str(), std::wstring(unpackPath.wstring() + L".deleteonnextlaunch").c_str()))
                             std::wcout << itFileName.wstring() << L" was renamed to " << unpackPath.filename().wstring() + L".deleteonnextlaunch" << std::endl;
@@ -2652,6 +2747,175 @@ namespace installer
         }
     }
 
+    // Shared extraction helper: extracts all entries from an Unzipper to targetDir.
+    // Updates progress via progressDialogHwnd and uses bCanceledOrError for cancellation.
+    // Returns the number of successfully extracted files, or -1 on fatal error.
+    int ExtractZipToDirectory(zipper::Unzipper& unzipper,
+                              const std::filesystem::path& targetDir,
+                              int32_t nRadioBtnID,
+                              int& processedFiles,
+                              int totalFiles,
+                              HWND progressDialogHwnd,
+                              std::atomic_bool& bCanceledOrError,
+                              const std::wstring& zipLabel)
+    {
+        int successCount = 0;
+        auto entries = unzipper.entries();
+
+        for (auto& entry : entries)
+        {
+            if (bCanceledOrError.load(std::memory_order_relaxed))
+                return -1;
+
+            processedFiles++;
+            if (totalFiles > 0 && progressDialogHwnd)
+            {
+                int progress = (processedFiles * 100) / totalFiles;
+                SendMessage(progressDialogHwnd, TDM_SET_PROGRESS_BAR_POS, progress, 0);
+            }
+
+            auto itemFileName = std::filesystem::path(entry.name).make_preferred();
+            printToMessages(L"Extracting\u00A0" + toWString(entry.name) + L"...");
+
+            auto unpackPath = (targetDir / itemFileName).make_preferred();
+            if (unpackPath.wstring().ends_with(unpackPath.preferred_separator))
+                continue; // Directory entry, skip
+
+            // Ensure parent directory exists
+            std::error_code ec;
+            auto parentDir = std::filesystem::path(unpackPath).remove_filename();
+            if (!std::filesystem::exists(parentDir, ec))
+            {
+                std::filesystem::create_directories(parentDir, ec);
+                if (ec)
+                {
+                    printToMessages(L"Error: Cannot create directory " + parentDir.wstring());
+                    continue;
+                }
+            }
+
+            // Handle locked files: try renaming existing locked file
+            if (IsFileLocked(unpackPath.c_str()))
+            {
+                printToMessages(itemFileName.wstring() + L" is locked. Renaming...");
+                // Remove any stale .deleteonnextlaunch
+                moveFileToRecycleBin(std::wstring(unpackPath.wstring() + L".deleteonnextlaunch").c_str());
+                if (!MoveFileW(unpackPath.c_str(), std::wstring(unpackPath.wstring() + L".deleteonnextlaunch").c_str()))
+                {
+                    DWORD err = GetLastError();
+                    std::wostringstream oss;
+                    oss << L"Warning: Could not rename locked file " << itemFileName.wstring()
+                        << L" (error " << err << L"). Skipping.";
+                    printToMessages(oss.str());
+                    continue;
+                }
+                printToMessages(itemFileName.wstring() + L" renamed to " + unpackPath.filename().wstring() + L".deleteonnextlaunch");
+            }
+
+            // Remove read-only attribute if present
+            TryRemoveReadOnly(unpackPath.wstring());
+
+            // --- INI file special handling ---
+            if (unpackPath.extension() == L".ini")
+            {
+                if (nRadioBtnID == RBUTTONID3) // Don't replace
+                    continue;
+
+                std::vector<uint8_t> vec;
+                if (!unzipper.extractEntryToMemory(entry.name, vec) || vec.empty())
+                {
+                    printToMessages(L"Warning: Failed to extract " + itemFileName.wstring());
+                    continue;
+                }
+
+                if (nRadioBtnID == RBUTTONID2) // Replace all
+                {
+                    moveFileToRecycleBin(unpackPath.wstring());
+                }
+                else // Merge (RBUTTONID1)
+                {
+                    mINI::INIFile iniOld(unpackPath.string());
+                    mINI::INIStructure iniOldStruct;
+                    if (std::filesystem::exists(unpackPath))
+                    {
+                        iniOld.read(iniOldStruct);
+                        if (iniOldStruct.size() != 0)
+                        {
+                            moveFileToRecycleBin(unpackPath.wstring());
+                            // Write new INI
+                            {
+                                std::ofstream iniFile(unpackPath, std::ios::binary);
+                                if (!iniFile.is_open())
+                                {
+                                    printToMessages(L"Error: Cannot write to " + unpackPath.wstring());
+                                    continue;
+                                }
+                                iniFile.write(reinterpret_cast<const char*>(vec.data()), vec.size());
+                                iniFile.close();
+                            }
+                            // Merge old settings into new INI
+                            mINI::INIFile iniNew(unpackPath.string());
+                            mINI::INIStructure iniNewStruct;
+                            iniNew.read(iniNewStruct);
+                            for (const auto& it_ini : iniOldStruct)
+                            {
+                                auto const& section = std::get<0>(it_ini);
+                                auto const& collection = std::get<1>(it_ini);
+                                for (auto const& it2 : collection)
+                                {
+                                    auto const& key = std::get<0>(it2);
+                                    if (iniOldStruct.has(section) && iniOldStruct[section].has(key))
+                                        iniNewStruct[section][key] = iniOldStruct[section][key];
+                                }
+                            }
+                            iniNew.write(iniNewStruct, true);
+                            printToMessages(itemFileName.wstring() + L" merged.");
+                            successCount++;
+                            continue;
+                        }
+                    }
+                    // Old INI doesn't exist or is empty, fall through to write new
+                }
+            }
+
+            // --- Standard file extraction ---
+            moveFileToRecycleBin(unpackPath.c_str());
+
+            std::vector<uint8_t> fileData;
+            if (!unzipper.extractEntryToMemory(entry.name, fileData) || fileData.empty())
+            {
+                printToMessages(L"Warning: Failed to extract " + itemFileName.wstring());
+                continue;
+            }
+
+            std::ofstream outputFileStream(unpackPath, std::ios::binary);
+            if (!outputFileStream.is_open())
+            {
+                std::wostringstream oss;
+                oss << L"Error: Cannot write to " << unpackPath.wstring()
+                    << L". Check permissions and disk space.";
+                printToMessages(oss.str());
+                continue;
+            }
+            outputFileStream.write(reinterpret_cast<const char*>(fileData.data()), fileData.size());
+            outputFileStream.close();
+
+            if (outputFileStream.fail())
+            {
+                std::wostringstream oss;
+                oss << L"Error: Write failed for " << unpackPath.wstring()
+                    << L". Disk may be full.";
+                printToMessages(oss.str());
+                continue;
+            }
+
+            printToMessages(itemFileName.wstring() + L" installed.");
+            successCount++;
+        }
+
+        return successCount;
+    }
+
     bool PerformOnlineInstallation(HWND hwndParent, const std::wstring& installPath)
     {
         // Get update URL from module info
@@ -2821,7 +3085,6 @@ namespace installer
 
                 try
                 {
-                    printToMessages(L"Extracting files...");
                     using namespace zipper;
                     std::string password = "";
                     auto& modInfo = *muGetInfoPtr();
@@ -2831,111 +3094,19 @@ namespace installer
                     }
 
                     Unzipper unzipper(buffer, password);
-                    std::vector<ZipEntry> entries = unzipper.entries();
-                    auto totalEntries = entries.size();
+                    auto totalEntries = static_cast<int>(unzipper.entries().size());
                     if (totalEntries == 0)
                         totalEntries = 1; // Avoid division by zero
-                    auto processedEntries = 0;
+                    int processedEntries = 0;
                     int32_t nRadioBtnID = RBUTTONID1; // Default to merge
 
-                    for (auto& entry : entries)
+                    int extracted = ExtractZipToDirectory(unzipper, targetDir, nRadioBtnID,
+                        processedEntries, totalEntries, progressDialogHwnd,
+                        bCanceledOrError, L"download");
+
+                    if (extracted < 0)
                     {
-                        if (bCanceledOrError.load(std::memory_order_relaxed)) break;
-
-                        processedEntries++;
-                        auto progress = (processedEntries * 100) / totalEntries;
-                        if (progressDialogHwnd) SendMessage(progressDialogHwnd, TDM_SET_PROGRESS_BAR_POS, progress, 0);
-
-                        auto itemFileName = std::filesystem::path(entry.name).make_preferred();
-                        printToMessages(L"Extracting\u00A0" + toWString(entry.name) + L"...");
-
-                        auto unpackPath = (targetDir / itemFileName).make_preferred();
-                        if (unpackPath.wstring().ends_with(unpackPath.preferred_separator)) continue;
-
-                        if (CheckForFileLock(unpackPath.c_str()) == FALSE)
-                        {
-                            printToMessages(itemFileName.wstring() + L" is locked. Renaming...");
-                            moveFileToRecycleBin(std::wstring(unpackPath.wstring() + L".deleteonnextlaunch").c_str());
-                            if (MoveFileW(unpackPath.c_str(), std::wstring(unpackPath.wstring() + L".deleteonnextlaunch").c_str()))
-                            {
-                                printToMessages(itemFileName.wstring() + L" renamed to " + unpackPath.filename().wstring() + L".deleteonnextlaunch");
-                            }
-                        }
-                        std::filesystem::create_directories(std::filesystem::path(unpackPath).remove_filename());
-
-                        if (unpackPath.extension() == L".ini")
-                        {
-                            if (nRadioBtnID == RBUTTONID3) continue;
-                            else if (nRadioBtnID == RBUTTONID2)
-                            {
-                                std::vector<uint8_t> vec;
-                                unzipper.extractEntryToMemory(entry.name, vec);
-                                if (!vec.empty())
-                                {
-                                    moveFileToRecycleBin(unpackPath.wstring());
-                                    std::ofstream iniFile(unpackPath, std::ios::binary);
-                                    iniFile.write(reinterpret_cast<const char*>(vec.data()), vec.size());
-                                    iniFile.close();
-                                    printToMessages(itemFileName.wstring() + L" updated.");
-                                }
-                                continue;
-                            }
-                            else
-                            { // Merge (RBUTTONID1)
-                                mINI::INIFile iniOld(unpackPath.string()); // mINI uses std::string
-                                mINI::INIStructure iniOldStruct;
-                                if (std::filesystem::exists(unpackPath))
-                                {
-                                    iniOld.read(iniOldStruct);
-                                    if (iniOldStruct.size())
-                                    {
-                                        moveFileToRecycleBin(unpackPath.wstring());
-                                        std::vector<uint8_t> vec;
-                                        unzipper.extractEntryToMemory(entry.name, vec);
-                                        std::ofstream iniFile(unpackPath, std::ios::binary);
-                                        iniFile.write(reinterpret_cast<const char*>(vec.data()), vec.size());
-                                        iniFile.close();
-
-                                        mINI::INIFile iniNew(unpackPath.string());
-                                        mINI::INIStructure iniNewStruct;
-                                        iniNew.read(iniNewStruct);
-                                        for (const auto& it_ini : iniOldStruct)
-                                        { // Renamed 'it'
-                                            auto const& section = std::get<0>(it_ini);
-                                            auto const& collection = std::get<1>(it_ini);
-                                            for (auto const& it2 : collection)
-                                            {
-                                                auto const& key = std::get<0>(it2);
-                                                if (iniOldStruct.has(section) && iniOldStruct[section].has(key))
-                                                    iniNewStruct[section][key] = iniOldStruct[section][key];
-                                            }
-                                        }
-                                        iniNew.write(iniNewStruct, true);
-                                        printToMessages(itemFileName.wstring() + L" merged.");
-                                        continue;
-                                    }
-                                }
-                                // If old INI doesn't exist or is empty, just extract new one
-                                std::vector<uint8_t> vec;
-                                unzipper.extractEntryToMemory(entry.name, vec);
-                                if (!vec.empty())
-                                {
-                                    std::ofstream iniFile(unpackPath, std::ios::binary);
-                                    iniFile.write(reinterpret_cast<const char*>(vec.data()), vec.size());
-                                    iniFile.close();
-                                    printToMessages(itemFileName.wstring() + L" installed (new).");
-                                }
-                                continue;
-                            }
-                        }
-
-                        moveFileToRecycleBin(unpackPath.c_str());
-                        std::vector<uint8_t> fileData;
-                        unzipper.extractEntryToMemory(entry.name, fileData);
-                        std::ofstream outputFileStream(unpackPath, std::ios::binary); // Renamed
-                        outputFileStream.write(reinterpret_cast<const char*>(fileData.data()), fileData.size());
-                        outputFileStream.close();
-                        printToMessages(itemFileName.wstring() + L" installed.");
+                        // Cancelled by user
                     }
                     unzipper.close();
                 }
@@ -3143,111 +3314,15 @@ namespace installer
                     zipStream->seekg(0, std::ios::beg);
 
                     zipper::Unzipper unzipper(*zipStream);
-                    auto entries = unzipper.entries();
                     int32_t nRadioBtnID = RBUTTONID1; // Default to merge
 
-                    for (auto& entry : entries)
-                    {
-                        if (bCanceledOrError.load(std::memory_order_relaxed)) break;
+                    int extracted = ExtractZipToDirectory(unzipper, targetDir, nRadioBtnID,
+                        processedFiles, totalFiles, progressDialogHwnd,
+                        bCanceledOrError, toWString(zip.name));
 
-                        processedFiles++;
-                        if (totalFiles > 0)
-                        { // Avoid division by zero if totalFiles is 0
-                            int progress = (processedFiles * 100) / totalFiles;
-                            if (progressDialogHwnd) SendMessage(progressDialogHwnd, TDM_SET_PROGRESS_BAR_POS, progress, 0);
-                        }
+                    if (extracted < 0)
+                        break; // Cancelled by user
 
-                        auto itemFileName = std::filesystem::path(entry.name).make_preferred();
-                        printToMessages(L"Extracting\u00A0" + toWString(entry.name) + L"..."); 
-
-                        auto unpackPath = (targetDir / itemFileName).make_preferred();
-                        if (unpackPath.wstring().ends_with(unpackPath.preferred_separator)) continue;
-
-                        if (CheckForFileLock(unpackPath.c_str()) == FALSE)
-                        {
-                            printToMessages(itemFileName.wstring() + L" is locked. Renaming...");
-                            moveFileToRecycleBin(std::wstring(unpackPath.wstring() + L".deleteonnextlaunch").c_str());
-                            if (MoveFileW(unpackPath.c_str(), std::wstring(unpackPath.wstring() + L".deleteonnextlaunch").c_str()))
-                            {
-                                printToMessages(itemFileName.wstring() + L" renamed to " + unpackPath.filename().wstring() + L".deleteonnextlaunch");
-                            }
-                        }
-                        std::filesystem::create_directories(std::filesystem::path(unpackPath).remove_filename());
-
-                        if (unpackPath.extension() == L".ini")
-                        {
-                            if (nRadioBtnID == RBUTTONID3) continue;
-                            else if (nRadioBtnID == RBUTTONID2)
-                            {
-                                std::vector<uint8_t> vec;
-                                unzipper.extractEntryToMemory(entry.name, vec);
-                                if (!vec.empty())
-                                {
-                                    moveFileToRecycleBin(unpackPath.wstring());
-                                    std::ofstream iniFile(unpackPath, std::ios::binary);
-                                    iniFile.write(reinterpret_cast<const char*>(vec.data()), vec.size());
-                                    iniFile.close();
-                                    printToMessages(itemFileName.wstring() + L" updated.");
-                                }
-                                continue;
-                            }
-                            else
-                            { // Merge (RBUTTONID1)
-                                mINI::INIFile iniOld(unpackPath.string());
-                                mINI::INIStructure iniOldStruct;
-                                if (std::filesystem::exists(unpackPath))
-                                {
-                                    iniOld.read(iniOldStruct);
-                                    if (iniOldStruct.size())
-                                    {
-                                        moveFileToRecycleBin(unpackPath.wstring());
-                                        std::vector<uint8_t> vec;
-                                        unzipper.extractEntryToMemory(entry.name, vec);
-                                        std::ofstream iniFile(unpackPath, std::ios::binary);
-                                        iniFile.write(reinterpret_cast<const char*>(vec.data()), vec.size());
-                                        iniFile.close();
-
-                                        mINI::INIFile iniNew(unpackPath.string());
-                                        mINI::INIStructure iniNewStruct;
-                                        iniNew.read(iniNewStruct);
-                                        for (const auto& it_ini : iniOldStruct)
-                                        { // Renamed 'it'
-                                            auto const& section = std::get<0>(it_ini);
-                                            auto const& collection = std::get<1>(it_ini);
-                                            for (auto const& it2 : collection)
-                                            {
-                                                auto const& key = std::get<0>(it2);
-                                                if (iniOldStruct.has(section) && iniOldStruct[section].has(key))
-                                                    iniNewStruct[section][key] = iniOldStruct[section][key];
-                                            }
-                                        }
-                                        iniNew.write(iniNewStruct, true);
-                                        printToMessages(itemFileName.wstring() + L" merged.");
-                                        continue;
-                                    }
-                                }
-                                // If old INI doesn't exist or is empty, just extract new one
-                                std::vector<uint8_t> vec;
-                                unzipper.extractEntryToMemory(entry.name, vec);
-                                if (!vec.empty())
-                                {
-                                    std::ofstream iniFile(unpackPath, std::ios::binary);
-                                    iniFile.write(reinterpret_cast<const char*>(vec.data()), vec.size());
-                                    iniFile.close();
-                                    printToMessages(itemFileName.wstring() + L" installed (new).");
-                                }
-                                continue;
-                            }
-                        }
-
-                        moveFileToRecycleBin(unpackPath.c_str());
-                        std::vector<uint8_t> fileData;
-                        unzipper.extractEntryToMemory(entry.name, fileData);
-                        std::ofstream outputFileStream(unpackPath, std::ios::binary); // Renamed
-                        outputFileStream.write(reinterpret_cast<const char*>(fileData.data()), fileData.size());
-                        outputFileStream.close();
-                        printToMessages(itemFileName.wstring() + L" installed.");
-                    }
                     unzipper.close();
                 }
                 catch (const std::exception& e)
@@ -3297,7 +3372,7 @@ namespace installer
     {
         std::wstring WindowTitle = L"Installer";
         std::wstring MainInstruction = L"Installation Complete";
-        std::wstring Content = L"Installation finished successfully.";
+        std::wstring Content = L"The installation has finished successfully.\n\nYou may now close this window.";
         HICON icon = NULL;
 
         auto& info = *muGetInfoPtr();
@@ -3317,7 +3392,8 @@ namespace installer
         tdc.pszMainInstruction = MainInstruction.c_str();
         tdc.pszContent = Content.c_str();
         tdc.dwCommonButtons = TDCBF_CLOSE_BUTTON;
-        tdc.nDefaultButton = TDCBF_CLOSE_BUTTON; // Make Close the default
+        tdc.nDefaultButton = TDCBF_CLOSE_BUTTON;
+        tdc.pszMainIcon = TD_INFORMATION_ICON;
         if (icon != NULL)
         {
             tdc.dwFlags |= TDF_USE_HICON_MAIN;
@@ -3328,11 +3404,21 @@ namespace installer
     }
 
     // Shows the failed installation dialog
-    void ShowInstallationFailedDialog(HWND hwndParent)
+    void ShowInstallationFailedDialog(HWND hwndParent, const std::wstring& extraInfo = L"")
     {
         std::wstring WindowTitle = L"Installer";
         std::wstring MainInstruction = L"Installation Failed";
-        std::wstring Content = L"An installation was canceled or error occurred while preparing the installation. Try running this application again.";
+        std::wstring Content = L"The installation was cancelled or an error occurred.";
+
+        if (!extraInfo.empty())
+        {
+            Content += L"\n\n" + extraInfo;
+        }
+        else
+        {
+            Content += L"\n\nTry running this application again or contact the mod author for support.";
+        }
+
         HICON icon = NULL;
 
         auto& info = *muGetInfoPtr();
@@ -3352,7 +3438,8 @@ namespace installer
         tdc.pszMainInstruction = MainInstruction.c_str();
         tdc.pszContent = Content.c_str();
         tdc.dwCommonButtons = TDCBF_CLOSE_BUTTON;
-        tdc.nDefaultButton = TDCBF_CLOSE_BUTTON; // Make Close the default
+        tdc.nDefaultButton = TDCBF_CLOSE_BUTTON;
+        tdc.pszMainIcon = TD_ERROR_ICON;
         if (icon != NULL)
         {
             tdc.dwFlags |= TDF_USE_HICON_MAIN;
@@ -3528,6 +3615,61 @@ void muInitInstaller()
 
             if (!installPath.empty())
             {
+                // Check write access to the target folder
+                if (!TestWriteAccess(installPath))
+                {
+                    // Ask user if they want to retry with elevated privileges
+                    TASKDIALOGCONFIG tdcElev = { sizeof(TASKDIALOGCONFIG) };
+                    TASKDIALOG_BUTTON elevButtons[] = {
+                        { BUTTONID1, L"Restart with administrator privileges\n"
+                            L"If you grant permission via User Account Control, the installer\n"
+                            L"will be able to write to the selected folder." },
+                        { BUTTONID2, L"Cancel" }
+                    };
+
+                    std::wstring elevTitle = L"Installer";
+                    HICON elevIcon = NULL;
+                    auto& elevInfo = *muGetInfoPtr();
+                    if (!elevInfo.empty())
+                    {
+                        auto& mui = elevInfo.begin()->second;
+                        if (!mui.muInstallerWindowTitle.empty())
+                            elevTitle = toWString(mui.muInstallerWindowTitle);
+                        elevIcon = mui.muInstallerIcon;
+                    }
+
+                    tdcElev.hwndParent = parentDialogHwnd;
+                    tdcElev.dwFlags = TDF_USE_COMMAND_LINKS | TDF_ALLOW_DIALOG_CANCELLATION;
+                    tdcElev.pszWindowTitle = elevTitle.c_str();
+                    tdcElev.pszMainInstruction = L"Administrator permissions required";
+                    std::wstring elevContent = L"The installer does not have permission to write to the selected folder:\n\n"
+                        + installPath + L"\n\n"
+                        L"Restart the installer with administrator privileges to continue.";
+                    tdcElev.pszContent = elevContent.c_str();
+                    tdcElev.pButtons = elevButtons;
+                    tdcElev.cButtons = _countof(elevButtons);
+                    if (elevIcon != NULL)
+                    {
+                        tdcElev.dwFlags |= TDF_USE_HICON_MAIN;
+                        tdcElev.hMainIcon = elevIcon;
+                    }
+
+                    int elevResult = 0;
+                    TaskDialogIndirect(&tdcElev, &elevResult, nullptr, nullptr);
+
+                    if (elevResult == BUTTONID1)
+                    {
+                        ElevateAndRestart();
+                        // If we get here, elevation was declined or failed
+                        ShowInstallationFailedDialog(parentDialogHwnd);
+                    }
+                    else
+                    {
+                        // User cancelled
+                    }
+                    return;
+                }
+
                 bool result = false;
                 if (EmbeddedZipReader::hasEmbeddedZips(ZipAppender::getExecutablePath()))
                     result = PerformOfflineInstallation(parentDialogHwnd, installPath);
