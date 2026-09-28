@@ -37,12 +37,12 @@ workspace "modupdater"
    includedirs { "external/jsoncpp/include" }
    includedirs { "source/external/zipper/external/minizip" }
 
-   links { "Wldap32.lib" }
-   links { "crypt32.lib" }
-   links { "Ws2_32.lib" }
+   -- source\external is rebuilt by updatedeps.bat: static libraries, static CRT, curl with HTTP(S) and Schannel only.
+   -- The Windows libraries curl needs (its libcurl.pc) are merged into the dist libraries, users don't add them.
+   links { "bcrypt.lib", "crypt32.lib", "secur32.lib", "Ws2_32.lib", "iphlpapi.lib" }
    links { "version.lib" }
    links { "cpr.lib" }
-   defines { "_CRT_SECURE_NO_WARNINGS", "USE_WINDOWS", "_WINDOWS", "_CRT_NONSTDC_NO_DEPRECATE", "NOMAIN" }
+   defines { "_CRT_SECURE_NO_WARNINGS", "USE_WINDOWS", "_WINDOWS", "_CRT_NONSTDC_NO_DEPRECATE", "NOMAIN", "CURL_STATICLIB" }
 
   filter { "platforms:Win32", "configurations:Debug" }
     includedirs { "source/external/cpr_x86-windows-static/include" }
@@ -90,6 +90,8 @@ project "UpdaterApp"
    targetdir "bin/%{cfg.buildcfg}"
    targetname "modupdater%{cfg.architecture}"
    targetextension ".exe"
+   -- next to the .asi of UpdaterPlugin, which has the same name: parallel builds must not share the .pdb
+   symbolspath "$(OutDir)$(TargetName)_app.pdb"
    staticruntime "On"
 
    defines { "EXECUTABLE" }

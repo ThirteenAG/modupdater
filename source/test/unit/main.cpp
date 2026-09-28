@@ -5,7 +5,8 @@
 #include <exception>
 #include "log.h"
 
-// UnitTests.exe [filter...]  runs all tests whose name contains one of the filters
+// UnitTests.exe [filter...]  runs all tests whose name contains one of the filters.
+// Online_ tests need the internet and only run when a filter selects them: UnitTests.exe Online
 namespace test
 {
     namespace
@@ -45,16 +46,13 @@ int main(int argc, char** argv)
 
     for (auto& c : test::Cases())
     {
-        if (argc > 1)
+        bool match = argc <= 1 && strncmp(c.name, "Online_", 7) != 0;
+        for (int i = 1; i < argc; i++)
+            match = match || strstr(c.name, argv[i]) != nullptr;
+        if (!match)
         {
-            bool match = false;
-            for (int i = 1; i < argc; i++)
-                match = match || strstr(c.name, argv[i]) != nullptr;
-            if (!match)
-            {
-                skipped++;
-                continue;
-            }
+            skipped++;
+            continue;
         }
 
         printf("%s\n", c.name);

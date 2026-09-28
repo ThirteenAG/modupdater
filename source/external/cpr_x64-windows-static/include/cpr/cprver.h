@@ -4,14 +4,14 @@
 /**
  * CPR version as a string.
  **/
-#define CPR_VERSION "1.11.1"
+#define CPR_VERSION "1.14.2"
 
 /**
  * CPR version split up into parts.
  **/
 #define CPR_VERSION_MAJOR 1
-#define CPR_VERSION_MINOR 11
-#define CPR_VERSION_PATCH 1
+#define CPR_VERSION_MINOR 14
+#define CPR_VERSION_PATCH 2
 
 /**
  * CPR version as a single hex digit.
@@ -25,6 +25,6 @@
  * '0x010702' -> 01.07.02 -> CPR_VERSION: 1.7.2
  * '0xA13722' -> A1.37.22 -> CPR_VERSION: 161.55.34
  **/
-#define CPR_VERSION_NUM 0x10b01
+#define CPR_VERSION_NUM 0x10e02
 
 #endif

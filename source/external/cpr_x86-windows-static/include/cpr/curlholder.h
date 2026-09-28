@@ -4,9 +4,11 @@
 #include <array>
 #include <curl/curl.h>
 #include <mutex>
-#include <string>
+
+#include "cpr/secure_string.h"
 
 namespace cpr {
+
 struct CurlHolder {
   private:
     /**
@@ -31,22 +33,22 @@ struct CurlHolder {
     std::array<char, CURL_ERROR_SIZE> error{};
 
     CurlHolder();
-    CurlHolder(const CurlHolder& other) = default;
-    CurlHolder(CurlHolder&& old) noexcept = default;
+    CurlHolder(const CurlHolder& other) = delete;
+    CurlHolder(CurlHolder&& old) noexcept;
     ~CurlHolder();
 
-    CurlHolder& operator=(CurlHolder&& old) noexcept = default;
-    CurlHolder& operator=(const CurlHolder& other) = default;
+    CurlHolder& operator=(const CurlHolder& other) = delete;
+    CurlHolder& operator=(CurlHolder&& old) noexcept;
 
     /**
      * Uses curl_easy_escape(...) for escaping the given string.
      **/
-    [[nodiscard]] std::string urlEncode(const std::string& s) const;
+    [[nodiscard]] util::SecureString urlEncode(std::string_view s) const;
 
     /**
      * Uses curl_easy_unescape(...) for unescaping the given string.
      **/
-    [[nodiscard]] std::string urlDecode(const std::string& s) const;
+    [[nodiscard]] util::SecureString urlDecode(std::string_view s) const;
 };
 } // namespace cpr
 

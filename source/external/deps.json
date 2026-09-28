@@ -1,0 +1,5 @@
+{
+  "zlib": { "version": "1.3.2", "sha256": "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16" },
+  "curl": { "version": "8.22.0", "sha256": "d54dd598bf05927a726deb38df31c6a255ba83ff1de57c5d1464dac3ed8f44a1" },
+  "cpr": { "version": "1.14.2", "sha256": "b9b529b47083bfe80bba855ca5308d12d767ae7c7b629aef5ef018c4343cf62b" }
+}

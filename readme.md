@@ -22,7 +22,10 @@ Requires Visual Studio 2026.
 premake5.bat     :: generates build\modupdater.slnx and build\test.slnx
 builddist.bat    :: builds dist\libmodupdater_{release,debug}_{win32,x64}.lib
 runtests.bat     :: builds everything and runs the automated tests (runtests.bat Debug Win32 Zip Http)
+updatedeps.bat   :: rebuilds zlib, curl and cpr in source\external (updatedeps.bat -Latest for the newest releases)
 ```
+
+The libraries in `source\external` are built from their official source releases by `updatedeps.bat`, with the CMake of Visual Studio: static libraries with the static CRT and no other dependencies, optimized for size and without debug information. curl only has HTTP and HTTPS through the TLS of Windows (Schannel), zlib only what reading and writing zip archives needs. `source\external\deps.json` pins the versions and the SHA-256 of their sources; `-Latest` looks up the newest releases on GitHub and pins them. Afterwards run `runtests.bat` and `builddist.bat`.
 
 ## Library
 
@@ -116,7 +119,7 @@ The install location box opens a list of the suggested folders (Steam, Rockstar 
 
 ## Tests
 
-- `bin\<platform>\<configuration>\UnitTests.exe` - automated tests (zip handling, zip slip, signed offline installers, downloads with a local test server, resume, cancel, GitHub API, ini merging, files in use, silent installs...)
+- `bin\<platform>\<configuration>\UnitTests.exe` - automated tests (zip handling, zip slip, signed offline installers, downloads with a local test server, resume, cancel, GitHub API, ini merging, files in use, silent installs...); `UnitTests.exe Online` (or `runtests.bat Release x64 Online`) also checks HTTPS downloads from GitHub
 - `TestInstallerApp.exe` - run it without arguments to pick a scenario and the light, dark or automatic theme: modern/classic UI, online/offline installer, custom styles, many install locations, slow download, download error, updater, screenshots of all pages
 - `TestApp.exe` - a "game" with two plugins that update themselves from a local server
 

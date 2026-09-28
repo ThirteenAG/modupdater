@@ -313,3 +313,27 @@ TEST_CASE(Updater_ApplyUpdate)
     CHECK(updater::ApplyUpdate(update, IniMode::Merge, "", {}).ok());
     CHECK_EQ(test::ReadFile(plugin), std::string("single file"));
 }
+
+// The real thing, only with "UnitTests.exe Online": TLS through Schannel, the GitHub API,
+// release downloads redirected to GitHub's download servers
+TEST_CASE(Online_GitHubHttps)
+{
+    auto api = http::Get("https://api.github.com/repos/curl/curl/releases/latest");
+    test::Note(std::format("GitHub API: {}, {} bytes", toString(api.Describe()), api.body.size()));
+    CHECK_EQ(api.status, 200L);
+    CHECK(api.body.find("\"tag_name\"") != std::string::npos);
+
+    auto info = GetInstallerDownloadInfo("https://github.com/ThirteenAG/GTAIV.EFLC.FusionFix/releases/latest/download/GTAIV.EFLC.FusionFix.zip", "");
+    auto host = info.url.substr(0, info.url.find('/', info.url.find("://") + 3));
+    test::Note(std::format("Fusion Fix: {} bytes from {}", info.size, host));
+    CHECK(info.found());
+    CHECK(info.size > 1024 * 1024);
+
+    test::TempDir dir(L"online");
+    auto file = dir / L"curl.tar.gz";
+    auto result = http::DownloadToFile("https://github.com/curl/curl/releases/download/curl-8_22_0/curl-8.22.0.tar.gz", file, {});
+    test::Note(std::format("download: {} bytes {}", result.bytes, toString(result.error)));
+    CHECK(result.ok);
+    CHECK(result.bytes > 1024 * 1024);
+    CHECK(test::ReadFile(file).starts_with("\x1f\x8b")); // gzip
+}
