@@ -3,41 +3,38 @@
 #include <windows.h>
 #include "targetver.h"
 #include <algorithm>
+#include <atomic>
 #include <chrono>
-#include <cpr/cpr.h>
-#include <cpr/multipart.h>
-#include <date.h>
-#include <direct.h>
+#include <cstdint>
 #include <filesystem>
+#include <format>
 #include <fstream>
-#include <IniReader.h>
-#include <io.h>
+#include <functional>
 #include <iomanip>
 #include <iostream>
-#include <json/json.h>
-#include <json/reader.h>
-#include <json/value.h>
-#include <json/writer.h>
-#include <list>
-#include <numeric>
-#include <regex>
-#include <mutex>
-#include <set>
 #include <map>
-#include <stdio.h>
+#include <memory>
+#include <mutex>
+#include <numeric>
+#include <optional>
+#include <set>
+#include <sstream>
 #include <string>
-#include <tchar.h>
-#include <Unzipper.hpp>
-#include <Zipper.hpp>
+#include <string_view>
+#include <thread>
+#include <vector>
 
-#include <Dbghelp.h>
-#pragma comment(lib,"dbghelp.lib")
-
-#include <RestartManager.h>
-#pragma comment(lib ,"Rstrtmgr.lib")
+// system libraries, so that modules linking the static library don't have to add them
+#pragma comment(lib,"user32.lib")
+#pragma comment(lib,"gdi32.lib")
+#pragma comment(lib,"advapi32.lib")
+#pragma comment(lib,"shell32.lib")
+#pragma comment(lib,"ole32.lib")
+#pragma comment(lib,"uuid.lib")
 
 #include <Commctrl.h>
 #pragma comment(lib,"Comctl32.lib")
+// TaskDialog needs common controls v6
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 inline void func() {}
@@ -50,19 +47,16 @@ T GetModulePath(HMODULE hModule)
 
     if constexpr (std::is_same_v<T, std::filesystem::path>)
     {
-        std::u16string ret;
-        std::filesystem::path pathret;
+        std::wstring ret;
         auto bufferSize = INITIAL_BUFFER_SIZE;
         for (size_t iterations = 0; iterations < MAX_ITERATIONS; ++iterations)
         {
             ret.resize(bufferSize);
-            size_t charsReturned = 0;
-            charsReturned = GetModuleFileNameW(hModule, (LPWSTR)&ret[0], bufferSize);
+            size_t charsReturned = GetModuleFileNameW(hModule, &ret[0], bufferSize);
             if (charsReturned < ret.length())
             {
                 ret.resize(charsReturned);
-                pathret = ret;
-                return pathret;
+                return std::filesystem::path(ret);
             }
             else
             {

@@ -1,1 +1,3 @@
-premake5 vs2022
+@echo off
+cd /d "%~dp0"
+"%~dp0premake5.exe" vs2026

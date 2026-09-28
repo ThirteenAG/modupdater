@@ -5,27 +5,30 @@ workspace "modupdater"
    location "build"
    cppdialect "C++latest"
    characterset ("UNICODE")
+   -- /Zc:inline drops unreferenced inline functions from the objects, the static libraries in dist stay small
+   buildoptions { "/utf-8", "/Zc:inline" }
+   editandcontinue "Off"
+   justmycode "Off"
+   multiprocessorcompile ("On")
 
    defines { "rsc_CompanyName=\"ThirteenAG\"" }
-   defines { "rsc_LegalCopyright=\"MIT License\""} 
-   defines { "rsc_FileVersion=\"1.0.0.0\"", "rsc_ProductVersion=\"1.0.0.0\"" }
+   defines { "rsc_LegalCopyright=\"MIT License\""}
+   defines { "rsc_FileVersion=\"2.0.0.0\"", "rsc_ProductVersion=\"2.0.0.0\"" }
    defines { "rsc_InternalName=\"%{wks.name}\"", "rsc_ProductName=\"%{wks.name}\"", "rsc_OriginalFilename=\"%{wks.name}.asi\"" }
    defines { "rsc_FileDescription=\"%{wks.name}\"" }
    defines { "rsc_UpdateUrl=\"https://github.com/ThirteenAG/modupdater\"" }
-   
-   files { "source/*.h" }
+
+   files { "source/*.h", "source/*.hpp" }
    files { "source/*.cpp" }
-   files { "libmodupdater.h" }
-   
+   files { "dist/libmodupdater.h" }
+
    files { "source/resources/*.rc" }
-   
+
    files { "external/jsoncpp/src/lib_json/*.h", "external/jsoncpp/src/lib_json/*.cpp" }
    files { "source/external/zipper/external/minizip/*.h" }
    files { "source/external/zipper/external/minizip/*.c" }
-   files { "source/external/zipper/external/minizip/zipper/*.cpp" }
-   files { "source/external/zipper/external/minizip/*.cpp" }
-   files { "source/external/zipper/include/Zipper/*.hpp" }
-   files { "source/external/zipper/src/**.*" }
+   -- command line tools of minizip
+   removefiles { "source/external/zipper/external/minizip/miniunz.c", "source/external/zipper/external/minizip/minizip.c" }
 
    includedirs { "dist" }
    includedirs { "source" }
@@ -33,14 +36,7 @@ workspace "modupdater"
    includedirs { "external/date/include/date" }
    includedirs { "external/jsoncpp/include" }
    includedirs { "source/external/zipper/external/minizip" }
-   includedirs { "source/external/zipper/external/minizip/zipper" }
-   includedirs { "source/external/zipper/external/minizip/minizip" }
-   includedirs { "source/external/zipper" }
-   includedirs { "source/external/zipper/include" }
-   includedirs { "source/external/zipper/src" }
-   includedirs { "source/external/zipper/src/utils" }
-   includedirs { "source/external/zipper/include/Zipper" }
-   
+
    links { "Wldap32.lib" }
    links { "crypt32.lib" }
    links { "Ws2_32.lib" }
@@ -105,8 +101,8 @@ project "UpdaterApp"
    filter "configurations:Release"
       defines { "NDEBUG" }
       optimize "On"
-      
-      
+
+
 project "UpdaterPlugin"
    kind "SharedLib"
    language "C++"
@@ -125,7 +121,7 @@ project "UpdaterPlugin"
    filter "configurations:Release"
       defines { "NDEBUG" }
       optimize "On"
-      
+
 
 project "UpdaterLib"
    kind "StaticLib"
@@ -134,8 +130,10 @@ project "UpdaterLib"
    targetname "libmodupdater_%{cfg.shortname}"
    targetextension ".lib"
    staticruntime "On"
-   
-   excludes { "source/Includes/Resources/*.rc" }
+
+   -- main() and DllMain of the standalone updater must not end up in the modules that link the library
+   removefiles { "source/main.cpp" }
+   removefiles { "source/resources/*.rc" }
 
    defines { "STATICLIB" }
 
@@ -148,36 +146,77 @@ project "UpdaterLib"
       optimize "On"
 
 
+-- Tests link the static library from dist, run builddist.bat (or build UpdaterLib) first
 workspace "test"
    configurations { "Release", "Debug" }
    platforms { "Win32", "x64" }
    location "build"
    cppdialect "C++latest"
    characterset ("UNICODE")
-   
+   buildoptions { "/utf-8" }
+   multiprocessorcompile ("On")
+
    includedirs { "dist" }
+   includedirs { "source" }
+   includedirs { "source/test" }
+   includedirs { "external/inireader" }
+   includedirs { "external/jsoncpp/include" }
+   includedirs { "external/date/include/date" }
+   includedirs { "source/external/zipper/external/minizip" }
    libdirs { "dist" }
    links { "libmodupdater_%{cfg.shortname}.lib" }
-   
-   files { "libmodupdater.h" }
-   files { "source/resources/*.rc" }
-   files { "source/test/main.cpp" }
+   defines { "_CRT_SECURE_NO_WARNINGS", "USE_WINDOWS", "_WINDOWS", "STATICLIB" }
+
+   files { "dist/libmodupdater.h" }
 
    defines { "rsc_CompanyName=\"ThirteenAG\"" }
-   defines { "rsc_LegalCopyright=\"MIT License\""} 
-   defines { "rsc_FileVersion=\"1.0.0.0\"", "rsc_ProductVersion=\"1.0.0.0\"" }
-   defines { "rsc_InternalName=\"%{wks.name}\"", "rsc_ProductName=\"%{wks.name}\"", "rsc_OriginalFilename=\"%{wks.name}.asi\"" }
-   defines { "rsc_FileDescription=\"%{wks.name}\"" }
+   defines { "rsc_LegalCopyright=\"MIT License\""}
+   defines { "rsc_FileVersion=\"2.0.0.0\"", "rsc_ProductVersion=\"2.0.0.0\"" }
+   defines { "rsc_InternalName=\"%{prj.name}\"", "rsc_ProductName=\"%{prj.name}\"", "rsc_OriginalFilename=\"%{prj.name}.asi\"" }
+   defines { "rsc_FileDescription=\"%{prj.name}\"" }
    defines { "rsc_UpdateUrl=\"https://github.com/ThirteenAG/modupdater\"" }
 
+  filter { "platforms:Win32" }
+    includedirs { "source/external/zlib_x86-windows-static/include" }
+
+  filter { "platforms:x64" }
+    includedirs { "source/external/zlib_x64-windows-static/include" }
+
+  filter {}
+
+-- Automated tests: run build\bin\...\UnitTests.exe (see runtests.bat)
+project "UnitTests"
+   kind "ConsoleApp"
+   language "C++"
+   targetdir "bin/%{cfg.platform}/%{cfg.buildcfg}"
+   targetname "UnitTests"
+   staticruntime "On"
+   dependson { "TestInstaller", "TestDLL1" }
+
+   files { "source/test/unit/*.cpp" }
+   files { "source/test/common/*.h", "source/test/common/*.cpp" }
+
+   filter "configurations:Debug"
+      defines { "DEBUG" }
+      symbols "On"
+
+   filter "configurations:Release"
+      defines { "NDEBUG" }
+      optimize "On"
+      symbols "On"
+
+-- Installer with a scenario picker: run it without arguments to try the installer UIs
 project "TestInstaller"
    kind "WindowedApp"
    language "C++"
-   targetdir "bin/%{cfg.buildcfg}"
+   targetdir "bin/%{cfg.platform}/%{cfg.buildcfg}"
    targetname "TestInstallerApp"
    targetextension ".exe"
    staticruntime "On"
-   defines { "MUINSTALLER" }
+
+   files { "source/test/installer/*.cpp", "source/test/installer/*.rc" }
+   files { "source/test/common/*.h", "source/test/common/*.cpp" }
+   files { "source/resources/*.rc" }
 
    filter "configurations:Debug"
       defines { "DEBUG" }
@@ -187,14 +226,18 @@ project "TestInstaller"
       defines { "NDEBUG" }
       optimize "On"
 
+-- Simulates a game with two plugins that use the updater
 project "TestApp"
    dependson { "TestDLL1", "TestDLL2" }
    kind "ConsoleApp"
    language "C++"
-   targetdir "bin/%{cfg.buildcfg}"
+   targetdir "bin/%{cfg.platform}/%{cfg.buildcfg}"
    targetname "TestApp"
    targetextension ".exe"
    staticruntime "On"
+
+   files { "source/test/app/*.cpp" }
+   files { "source/test/common/*.h", "source/test/common/*.cpp" }
 
    filter "configurations:Debug"
       defines { "DEBUG" }
@@ -207,11 +250,14 @@ project "TestApp"
 project "TestDLL1"
    kind "SharedLib"
    language "C++"
-   targetdir "bin/%{cfg.buildcfg}"
+   targetdir "bin/%{cfg.platform}/%{cfg.buildcfg}"
    targetname "TestDLL1"
    targetextension ".asi"
-
    staticruntime "On"
+   defines { "TESTDLL_NAME=\"TestDLL1\"" }
+
+   files { "source/test/dll/*.cpp" }
+   files { "source/resources/*.rc" }
 
    filter "configurations:Debug"
       defines { "DEBUG" }
@@ -224,11 +270,14 @@ project "TestDLL1"
 project "TestDLL2"
    kind "SharedLib"
    language "C++"
-   targetdir "bin/%{cfg.buildcfg}"
+   targetdir "bin/%{cfg.platform}/%{cfg.buildcfg}"
    targetname "TestDLL2"
    targetextension ".asi"
-
    staticruntime "On"
+   defines { "TESTDLL_NAME=\"TestDLL2\"" }
+
+   files { "source/test/dll/*.cpp" }
+   files { "source/resources/*.rc" }
 
    filter "configurations:Debug"
       defines { "DEBUG" }

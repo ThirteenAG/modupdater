@@ -1,0 +1,5 @@
+#include "resource.h"
+
+IDI_TESTAPP        ICON    "app.ico"
+IDR_TEST_LOGO      PNG     "logo.png"
+IDR_TEST_BACKGROUND JPG    "background.jpg"

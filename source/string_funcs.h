@@ -1,13 +1,24 @@
+#pragma once
+#include <windows.h>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cwctype>
+#include <iomanip>
+#include <sstream>
 #include <string>
+#include <string_view>
 
 inline bool starts_with(const std::string_view str, const std::string_view prefix, bool case_sensitive)
 {
     if (!case_sensitive)
     {
-        std::string str1(str); std::string str2(prefix);
-        std::transform(str1.begin(), str1.end(), str1.begin(), ::tolower);
-        std::transform(str2.begin(), str2.end(), str2.begin(), ::tolower);
-        return str1.starts_with(str2);
+        if (str.size() < prefix.size())
+            return false;
+        return std::equal(prefix.begin(), prefix.end(), str.begin(), [](char a, char b)
+        {
+            return ::tolower(static_cast<unsigned char>(a)) == ::tolower(static_cast<unsigned char>(b));
+        });
     }
     return str.starts_with(prefix);
 }
@@ -16,79 +27,105 @@ inline bool starts_with(const std::wstring_view str, const std::wstring_view pre
 {
     if (!case_sensitive)
     {
-        std::wstring str1(str); std::wstring str2(prefix);
-        std::transform(str1.begin(), str1.end(), str1.begin(), ::towlower);
-        std::transform(str2.begin(), str2.end(), str2.begin(), ::towlower);
-        return str1.starts_with(str2);
+        if (str.size() < prefix.size())
+            return false;
+        if (prefix.empty())
+            return true;
+        // same rules as the file system, not limited to ASCII like towlower in the "C" locale
+        return CompareStringOrdinal(str.data(), static_cast<int>(prefix.size()), prefix.data(), static_cast<int>(prefix.size()), TRUE) == CSTR_EQUAL;
     }
     return str.starts_with(prefix);
 }
 
-inline bool ends_with(const std::string_view str, const std::string_view prefix, bool case_sensitive)
+inline bool ends_with(const std::string_view str, const std::string_view suffix, bool case_sensitive)
 {
-    if (!case_sensitive)
-    {
-        std::string str1(str); std::string str2(prefix);
-        std::transform(str1.begin(), str1.end(), str1.begin(), ::tolower);
-        std::transform(str2.begin(), str2.end(), str2.begin(), ::tolower);
-        return str1.ends_with(str2);
-    }
-    return str.ends_with(prefix);
+    if (str.size() < suffix.size())
+        return false;
+    return starts_with(str.substr(str.size() - suffix.size()), suffix, case_sensitive);
 }
 
-inline bool ends_with(const std::wstring_view str, const std::wstring_view prefix, bool case_sensitive)
+inline bool ends_with(const std::wstring_view str, const std::wstring_view suffix, bool case_sensitive)
 {
-    if (!case_sensitive)
-    {
-        std::wstring str1(str); std::wstring str2(prefix);
-        std::transform(str1.begin(), str1.end(), str1.begin(), ::towlower);
-        std::transform(str2.begin(), str2.end(), str2.begin(), ::towlower);
-        return str1.ends_with(str2);
-    }
-    return str.ends_with(prefix);
+    if (str.size() < suffix.size())
+        return false;
+    return starts_with(str.substr(str.size() - suffix.size()), suffix, case_sensitive);
+}
+
+inline bool iequals(const std::wstring_view a, const std::wstring_view b)
+{
+    return a.size() == b.size() && starts_with(a, b, false);
+}
+
+inline bool iequals(const std::string_view a, const std::string_view b)
+{
+    return a.size() == b.size() && starts_with(a, b, false);
 }
 
 template<typename T>
-std::wstring toLowerWStr(T arg)
+std::wstring toLowerWStr(const T& arg)
 {
-    std::wstring ret;
-    std::transform(arg.begin(), arg.end(), std::back_inserter(ret), ::tolower);
+    std::wstring source(arg.begin(), arg.end());
+    std::wstring ret(source.size(), L'\0');
+    if (!source.empty() && !LCMapStringEx(LOCALE_NAME_INVARIANT, LCMAP_LOWERCASE, source.data(), static_cast<int>(source.size()), ret.data(), static_cast<int>(ret.size()), nullptr, nullptr, 0))
+        return source;
     return ret;
 }
 
 template<typename T>
-std::string toLowerStr(T arg)
+std::string toLowerStr(const T& arg)
 {
     std::string ret;
-    std::transform(arg.begin(), arg.end(), std::back_inserter(ret), ::tolower);
+    ret.reserve(arg.size());
+    for (auto c : arg)
+        ret.push_back(static_cast<char>(::tolower(static_cast<unsigned char>(c))));
     return ret;
 }
 
-inline std::wstring toWString(const std::string& string)
+inline std::wstring toWString(std::string_view string)
 {
     if (string.empty()) return std::wstring();
-    int size_needed = MultiByteToWideChar(CP_UTF8, 0, &string[0], (int)string.size(), NULL, 0);
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, string.data(), (int)string.size(), NULL, 0);
     std::wstring wstrTo(size_needed, 0);
-    MultiByteToWideChar(CP_UTF8, 0, &string[0], (int)string.size(), &wstrTo[0], size_needed);
+    MultiByteToWideChar(CP_UTF8, 0, string.data(), (int)string.size(), &wstrTo[0], size_needed);
     return wstrTo;
 }
 
-inline std::string toString(const std::wstring& wstring)
+inline std::string toString(std::wstring_view wstring)
 {
     if (wstring.empty()) return std::string();
-    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstring[0], (int)wstring.size(), NULL, 0, NULL, NULL);
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstring.data(), (int)wstring.size(), NULL, 0, NULL, NULL);
     std::string strTo(size_needed, 0);
-    WideCharToMultiByte(CP_UTF8, 0, &wstring[0], (int)wstring.size(), &strTo[0], size_needed, NULL, NULL);
+    WideCharToMultiByte(CP_UTF8, 0, wstring.data(), (int)wstring.size(), &strTo[0], size_needed, NULL, NULL);
     return strTo;
+}
+
+// Converts a narrow string from the given code page (e.g. CP_ACP for argv) to UTF-16
+inline std::wstring toWStringCP(std::string_view string, UINT codePage)
+{
+    if (string.empty()) return std::wstring();
+    int size_needed = MultiByteToWideChar(codePage, 0, string.data(), (int)string.size(), NULL, 0);
+    std::wstring wstrTo(size_needed, 0);
+    MultiByteToWideChar(codePage, 0, string.data(), (int)string.size(), &wstrTo[0], size_needed);
+    return wstrTo;
 }
 
 template<typename T>
 void removeQuotesFromString(T& string)
 {
-    if (string.at(0) == '\"' || string.at(0) == '\'')
+    if (!string.empty() && (string.front() == '\"' || string.front() == '\''))
         string.erase(0, 1);
-    if (string.at(string.size() - 1) == '\"' || string.at(string.size() - 1) == '\'')
-        string.erase(string.size() - 1);
+    if (!string.empty() && (string.back() == '\"' || string.back() == '\''))
+        string.pop_back();
+}
+
+template<typename T>
+T trimString(const T& string)
+{
+    auto isSpace = [](auto c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+    size_t begin = 0, end = string.size();
+    while (begin < end && isSpace(string[begin])) ++begin;
+    while (end > begin && isSpace(string[end - 1])) --end;
+    return string.substr(begin, end - begin);
 }
 
 template<typename T>
@@ -100,7 +137,8 @@ size_t find_nth(const T& haystack, size_t pos, const T& needle, size_t nth)
 }
 
 template<typename T>
-bool string_replace(T& str, const T& from, const T& to) {
+bool string_replace(T& str, const T& from, const T& to)
+{
     size_t start_pos = str.find(from);
     if (start_pos == T::npos)
         return false;
@@ -108,55 +146,45 @@ bool string_replace(T& str, const T& from, const T& to) {
     return true;
 }
 
-inline std::string formatBytes(int32_t bytes, int32_t precision = 2)
+template<typename T>
+size_t string_replace_all(T& str, const T& from, const T& to)
+{
+    if (from.empty())
+        return 0;
+    size_t count = 0;
+    for (size_t pos = str.find(from); pos != T::npos; pos = str.find(from, pos + to.length()))
+    {
+        str.replace(pos, from.length(), to);
+        ++count;
+    }
+    return count;
+}
+
+inline std::string formatBytes(uint64_t bytes, int32_t precision = 2)
 {
     if (bytes == 0)
         return std::string("0 Bytes");
 
-    auto k = 1000;
-    const char* sizes[] = { "Bytes", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
-    size_t i = (size_t)floor(log(bytes) / log(k));
+    constexpr double k = 1000.0;
+    const char* sizes[] = { "Bytes", "KB", "MB", "GB", "TB", "PB", "EB" };
+    size_t i = static_cast<size_t>(std::floor(std::log(static_cast<double>(bytes)) / std::log(k)));
+    i = std::min<size_t>(i, std::size(sizes) - 1);
+    if (i == 0)
+        return std::to_string(bytes) + " Bytes";
     std::ostringstream out;
-    out << std::fixed << std::setprecision(precision) << (bytes / pow(k, i));
+    out << std::fixed << std::setprecision(precision) << (static_cast<double>(bytes) / std::pow(k, static_cast<double>(i)));
     return std::string(out.str() + ' ' + sizes[i]);
-};
+}
 
-inline std::wstring formatBytesW(int32_t bytes, int32_t precision = 2)
+inline std::wstring formatBytesW(uint64_t bytes, int32_t precision = 2)
 {
-    auto s = formatBytes(bytes, precision);
-    return toWString(s);
-};
-
-template<typename T>
-T GetLongestCommonSubstring(const T & first, const T & second)
-{
-    auto findSubstrings = [](const T& word, std::set<T>& substrings)->void
-    {
-        int l = word.length();
-        for (int start = 0; start < l; start++) {
-            for (int length = 1; length < l - start + 1; length++) {
-                substrings.insert(word.substr(start, length));
-            }
-        }
-    };
-
-    std::set<T> firstSubstrings, secondSubstrings;
-    findSubstrings(first, firstSubstrings);
-    findSubstrings(second, secondSubstrings);
-    std::set<T> common;
-    std::set_intersection(firstSubstrings.begin(), firstSubstrings.end(), secondSubstrings.begin(), secondSubstrings.end(), std::inserter(common, common.begin()));
-    std::vector<T> commonSubs(common.begin(), common.end());
-    std::sort(commonSubs.begin(), commonSubs.end(), [](const T &s1, const T &s2) { return s1.length() > s2.length(); });
-    if (!commonSubs.empty())
-        return *(commonSubs.begin());
-    else
-        return L"";
+    return toWString(formatBytes(bytes, precision));
 }
 
 inline std::string getTimeAgo(int32_t hours)
 {
-    double deltaSeconds = hours * 3600;
-    double deltaMinutes = deltaSeconds / 60.0f;
+    double deltaSeconds = hours * 3600.0;
+    double deltaMinutes = deltaSeconds / 60.0;
     int32_t tmp;
 
     if (deltaSeconds < 5)
@@ -165,7 +193,7 @@ inline std::string getTimeAgo(int32_t hours)
     }
     else if (deltaSeconds < 60)
     {
-        return std::to_string(floor(deltaSeconds)) + " seconds ago";
+        return std::to_string(static_cast<int32_t>(deltaSeconds)) + " seconds ago";
     }
     else if (deltaSeconds < 120)
     {
@@ -173,7 +201,7 @@ inline std::string getTimeAgo(int32_t hours)
     }
     else if (deltaMinutes < 60)
     {
-        return std::to_string(floor(deltaMinutes)) + " minutes ago";
+        return std::to_string(static_cast<int32_t>(deltaMinutes)) + " minutes ago";
     }
     else if (deltaMinutes < 120)
     {
@@ -222,6 +250,5 @@ inline std::string getTimeAgo(int32_t hours)
 
 inline std::wstring getTimeAgoW(int32_t hours)
 {
-    auto s = getTimeAgo(hours);
-    return toWString(s);
+    return toWString(getTimeAgo(hours));
 }
