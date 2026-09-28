@@ -6,6 +6,7 @@
     for Win32 and x64, Debug and Release, as static libraries with the static CRT (/MT, /MTd).
     Everything is optimized for size and has no debug information: the Debug libraries only differ in what
     must match a Debug build that links them, the debug CRT and the checks of the C++ library.
+    With the MSVC toolset of Visual Studio 2022 (v143) when it is installed, so any newer toolset links them.
 
       updatedeps.bat              rebuilds the versions pinned in source\external\deps.json
       updatedeps.bat -Latest      looks up the newest releases on GitHub, builds and pins them
@@ -70,11 +71,23 @@ $generator = @()
 $generatorYear = @{ 16 = '2019'; 17 = '2022'; 18 = '2026' }[$vsMajor]
 if ($generatorYear) { $generator = @('-G', "Visual Studio $vsMajor $generatorYear", "-DCMAKE_GENERATOR_INSTANCE=$vs") }
 
+# A static library links with the toolset that built it or a newer one: the toolset of Visual Studio 2022 (v143)
+# when it is installed next to a newer one, like the dist libraries (premake5.lua)
+$toolset = @()
+$toolsetFile = Join-Path $vs 'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt'
+$v143File = Join-Path $vs 'VC\Auxiliary\Build\Microsoft.VCToolsVersion.v143.default.txt'
+if ($generator -and $vsMajor -gt 17 -and (Test-Path $v143File))
+{
+    $toolset = @('-T', 'v143')
+    $toolsetFile = $v143File
+}
+
 $dumpbin = Get-ChildItem (Join-Path $vs 'VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe') -ErrorAction SilentlyContinue |
     Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
 $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
 
 Write-Host "Visual Studio $vsMajor ($vs)"
+Write-Host "MSVC $((Get-Content $toolsetFile -ErrorAction SilentlyContinue | Select-Object -First 1))$(if ($toolset) { ' (v143)' })"
 Write-Host "CMake: $cmake"
 
 $logs = Join-Path $work 'logs'
@@ -176,10 +189,11 @@ $common = @(
     '-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=', # no debug information in any configuration
     '-DCMAKE_INSTALL_MESSAGE=NEVER'
 )
-# Debug keeps its asserts (no NDEBUG), /MTd defines _DEBUG
+# Debug keeps its asserts (no NDEBUG), /MTd defines _DEBUG. The vectorized algorithms of the STL call helpers
+# that new toolset versions add all the time, a project with an older toolset could not link them.
 $smallCode = @(
-    '-DCMAKE_C_FLAGS_RELEASE=/O1 /Ob1 /Gw /DNDEBUG', '-DCMAKE_CXX_FLAGS_RELEASE=/O1 /Ob1 /Gw /DNDEBUG',
-    '-DCMAKE_C_FLAGS_DEBUG=/O1 /Ob1 /Gw', '-DCMAKE_CXX_FLAGS_DEBUG=/O1 /Ob1 /Gw'
+    '-DCMAKE_C_FLAGS_RELEASE=/O1 /Ob1 /Gw /DNDEBUG', '-DCMAKE_CXX_FLAGS_RELEASE=/O1 /Ob1 /Gw /DNDEBUG /D_USE_STD_VECTOR_ALGORITHMS=0',
+    '-DCMAKE_C_FLAGS_DEBUG=/O1 /Ob1 /Gw', '-DCMAKE_CXX_FLAGS_DEBUG=/O1 /Ob1 /Gw /D_USE_STD_VECTOR_ALGORITHMS=0'
 )
 # inflate is the hot loop of an installation
 $fastCode = @('-DCMAKE_C_FLAGS_RELEASE=/O2 /Gw /DNDEBUG', '-DCMAKE_C_FLAGS_DEBUG=/O2 /Gw')
@@ -211,7 +225,7 @@ function Build-Project([string]$name, [string]$source, [string]$arch, [string[]]
     $log = Join-Path $logs "$name-$arch.log"
     if (Test-Path $build) { Remove-Item $build -Recurse -Force }
     if (Test-Path $log) { Remove-Item $log }
-    Invoke-Tool $log $cmake (@('-S', $source, '-B', $build) + $generator + @('-A', $arch) + $common + $options)
+    Invoke-Tool $log $cmake (@('-S', $source, '-B', $build) + $generator + @('-A', $arch) + $toolset + $common + $options)
     foreach ($config in 'Release', 'Debug')
     {
         Invoke-Tool $log $cmake @('--build', $build, '--config', $config, '--parallel')

@@ -19,6 +19,8 @@ namespace mu::installer
     {
         std::array<std::optional<COLORREF>, MU_COLOR_COUNT> colors;
         std::vector<uint8_t> logo;
+        std::vector<uint8_t> background;
+        std::optional<int> backgroundOverlay;
     };
 
     // Installer settings collected from the API (see libmodupdater.h)
@@ -38,6 +40,8 @@ namespace mu::installer
         std::vector<uint8_t> logo;
         std::vector<uint8_t> background;
         int backgroundOverlay = 70;
+        int backgroundBlur = 0;         // DIP
+        int textBackdropBlur = 0;       // DIP, the background picture behind texts only
         std::vector<uint8_t> fontData;
         std::wstring fontFamily;
         int width = 0;

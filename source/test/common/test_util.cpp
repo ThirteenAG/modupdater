@@ -199,7 +199,7 @@ namespace test
         return WriteFile(file, data);
     }
 
-    double AverageLuminance(const std::filesystem::path& image)
+    double AverageLuminance(const std::filesystem::path& image, const RECT* area)
     {
         using Microsoft::WRL::ComPtr;
         constexpr GUID clsidWicImagingFactory = { 0xcacaf262, 0x9370, 0x4615, { 0xa1, 0x3b, 0x9f, 0x55, 0x39, 0xda, 0x4c, 0x0a } };
@@ -219,13 +219,16 @@ namespace test
                 SUCCEEDED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom)) &&
                 SUCCEEDED(converter->GetSize(&width, &height)) && width && height)
             {
-                std::vector<uint8_t> pixels(static_cast<size_t>(width) * height * 4);
-                if (SUCCEEDED(converter->CopyPixels(nullptr, width * 4, static_cast<UINT>(pixels.size()), pixels.data())))
+                WICRect rect = { 0, 0, static_cast<INT>(width), static_cast<INT>(height) };
+                if (area)
+                    rect = { area->left, area->top, area->right - area->left, area->bottom - area->top };
+                std::vector<uint8_t> pixels(static_cast<size_t>(rect.Width) * rect.Height * 4);
+                if (rect.Width > 0 && rect.Height > 0 && SUCCEEDED(converter->CopyPixels(&rect, rect.Width * 4, static_cast<UINT>(pixels.size()), pixels.data())))
                 {
                     double sum = 0;
                     for (size_t i = 0; i < pixels.size(); i += 4)
                         sum += 0.0722 * pixels[i] + 0.7152 * pixels[i + 1] + 0.2126 * pixels[i + 2];
-                    result = sum / (255.0 * width * height);
+                    result = sum / (255.0 * rect.Width * rect.Height);
                 }
             }
         }
@@ -233,5 +236,58 @@ namespace test
         if (SUCCEEDED(co))
             CoUninitialize();
         return result;
+    }
+
+    std::string SolidImage(uint32_t argb, int width, int height)
+    {
+        return PngImage(width, height, [argb](int, int) { return argb; });
+    }
+
+    std::string PngImage(int width, int height, const std::function<uint32_t(int x, int y)>& pixel)
+    {
+        using Microsoft::WRL::ComPtr;
+        constexpr GUID clsidWicImagingFactory = { 0xcacaf262, 0x9370, 0x4615, { 0xa1, 0x3b, 0x9f, 0x55, 0x39, 0xda, 0x4c, 0x0a } };
+        HRESULT co = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+        std::string png;
+        {
+            std::vector<uint32_t> pixels(static_cast<size_t>(width) * height); // BGRA in memory
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                    pixels[static_cast<size_t>(y) * width + x] = pixel(x, y);
+            WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
+            ComPtr<IWICImagingFactory> wic;
+            ComPtr<IWICBitmap> bitmap;
+            ComPtr<IStream> stream;
+            ComPtr<IWICBitmapEncoder> encoder;
+            ComPtr<IWICBitmapFrameEncode> frame;
+            HGLOBAL memory = nullptr;
+            STATSTG stat = {};
+            if (SUCCEEDED(CoCreateInstance(clsidWicImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic))) &&
+                SUCCEEDED(wic->CreateBitmapFromMemory(width, height, GUID_WICPixelFormat32bppBGRA, width * 4, static_cast<UINT>(pixels.size() * 4), reinterpret_cast<BYTE*>(pixels.data()), &bitmap)) &&
+                SUCCEEDED(CreateStreamOnHGlobal(nullptr, TRUE, &stream)) &&
+                SUCCEEDED(wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) &&
+                SUCCEEDED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) &&
+                SUCCEEDED(encoder->CreateNewFrame(&frame, nullptr)) &&
+                SUCCEEDED(frame->Initialize(nullptr)) &&
+                SUCCEEDED(frame->SetSize(width, height)) &&
+                SUCCEEDED(frame->SetPixelFormat(&format)) &&
+                SUCCEEDED(frame->WriteSource(bitmap.Get(), nullptr)) &&
+                SUCCEEDED(frame->Commit()) &&
+                SUCCEEDED(encoder->Commit()) &&
+                SUCCEEDED(stream->Stat(&stat, STATFLAG_NONAME)) &&
+                SUCCEEDED(GetHGlobalFromStream(stream.Get(), &memory)))
+            {
+                if (auto data = static_cast<const char*>(GlobalLock(memory)))
+                {
+                    png.assign(data, static_cast<size_t>(stat.cbSize.QuadPart));
+                    GlobalUnlock(memory);
+                }
+            }
+        }
+
+        if (SUCCEEDED(co))
+            CoUninitialize();
+        return png;
     }
 }

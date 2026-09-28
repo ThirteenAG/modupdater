@@ -337,6 +337,16 @@ void muSetInstallerBackgroundOverlay(HMODULE hModule, int opacityPercent)
     RegistrySetInt(hModule, K(Key::InstallerBackgroundOverlay), std::clamp(opacityPercent, 0, 100));
 }
 
+void muSetInstallerBackgroundBlur(HMODULE hModule, int radius)
+{
+    RegistrySetInt(hModule, K(Key::InstallerBackgroundBlur), std::clamp(radius, 0, 100));
+}
+
+void muSetInstallerTextBackdropBlur(HMODULE hModule, int radius)
+{
+    RegistrySetInt(hModule, K(Key::InstallerTextBackdropBlur), std::clamp(radius, 0, 100));
+}
+
 void muSetInstallerColor(HMODULE hModule, int element, COLORREF color)
 {
     if (element >= 0 && element < MU_COLOR_COUNT)
@@ -420,4 +430,22 @@ void muSetInstallerThemeLogoResource(HMODULE hModule, int theme, const char* nam
 {
     if (IsThemeValid(theme))
         SetResource(hModule, K(theme == MU_THEME_DARK ? Key::InstallerDarkLogo : Key::InstallerLightLogo), name, type);
+}
+
+void muSetInstallerThemeBackground(HMODULE hModule, int theme, const void* image, unsigned int size)
+{
+    if (IsThemeValid(theme))
+        RegistrySetBlob(hModule, K(theme == MU_THEME_DARK ? Key::InstallerDarkBackground : Key::InstallerLightBackground), image, size);
+}
+
+void muSetInstallerThemeBackgroundResource(HMODULE hModule, int theme, const char* name, const char* type)
+{
+    if (IsThemeValid(theme))
+        SetResource(hModule, K(theme == MU_THEME_DARK ? Key::InstallerDarkBackground : Key::InstallerLightBackground), name, type);
+}
+
+void muSetInstallerThemeBackgroundOverlay(HMODULE hModule, int theme, int opacityPercent)
+{
+    if (IsThemeValid(theme))
+        RegistrySetInt(hModule, K(theme == MU_THEME_DARK ? Key::InstallerDarkBackgroundOverlay : Key::InstallerLightBackgroundOverlay), std::clamp(opacityPercent, 0, 100));
 }

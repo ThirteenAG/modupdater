@@ -25,6 +25,8 @@ runtests.bat     :: builds everything and runs the automated tests (runtests.bat
 updatedeps.bat   :: rebuilds zlib, curl and cpr in source\external (updatedeps.bat -Latest for the newest releases)
 ```
 
+A static library links with the MSVC toolset that built it or a newer one. `builddist.bat` and `updatedeps.bat` use the toolset of Visual Studio 2022 (v143, an individual component of the Visual Studio 2026 installer) when it is installed, and the library is built without the vectorized algorithms of the STL, whose helpers change with every toolset update: projects and CI runners with any Visual Studio 2026 link the dist libraries as they are, without building modupdater. Visual Studio and `runtests.bat` build with the default toolset and also write to `dist`, run `builddist.bat` last before committing the libraries.
+
 The libraries in `source\external` are built from their official source releases by `updatedeps.bat`, with the CMake of Visual Studio: static libraries with the static CRT and no other dependencies, optimized for size and without debug information. curl only has HTTP and HTTPS through the TLS of Windows (Schannel), zlib only what reading and writing zip archives needs. `source\external\deps.json` pins the versions and the SHA-256 of their sources; `-Latest` looks up the newest releases on GitHub and pins them. Afterwards run `runtests.bat` and `builddist.bat`.
 
 ## Library
@@ -90,10 +92,10 @@ muSetInstallerThemeLogoResource(hm, MU_THEME_LIGHT, MAKEINTRESOURCEA(103), "PNG"
 | Function | |
 | --- | --- |
 | `muSetInstallerLogo[Resource]` | logo (PNG, JPEG, BMP, GIF, ICO, TIFF), the icon is used when there is none |
-| `muSetInstallerBackground[Resource]`, `muSetInstallerBackgroundOverlay` | background image under the gradient, overlay opacity in percent |
+| `muSetInstallerBackground[Resource]`, `muSetInstallerBackgroundOverlay`, `muSetInstallerBackgroundBlur`, `muSetInstallerTextBackdropBlur` | background image under the gradient, overlay opacity in percent, gaussian blur radius of the whole picture, or only behind each line of text (a rectangle like the background of subtitles) and the install location box, which keeps text over busy pictures readable |
 | `muSetInstallerGradient`, `muSetInstallerColor` | gradient, text, links, buttons, progress bar, panels, list, error and success colors (`MU_COLOR_*`); unset colors match the brightness of the gradient |
 | `muSetInstallerTheme` | `MU_THEME_AUTO` (default) follows the Windows light/dark app mode, also when it changes while the installer is open; `MU_THEME_LIGHT`, `MU_THEME_DARK` |
-| `muSetInstallerThemeColor`, `muSetInstallerThemeGradient`, `muSetInstallerThemeLogo[Resource]` | colors and logo for `MU_THEME_LIGHT` or `MU_THEME_DARK` only, settings without a theme are used by both |
+| `muSetInstallerThemeColor`, `muSetInstallerThemeGradient`, `muSetInstallerThemeLogo[Resource]`, `muSetInstallerThemeBackground[Resource]`, `muSetInstallerThemeBackgroundOverlay` | colors, logo, background image and its overlay for `MU_THEME_LIGHT` or `MU_THEME_DARK` only, settings without a theme are used by both |
 | `muSetInstallerFont`, `muSetInstallerFontData` | font family, optionally a private TTF/OTF from memory |
 | `muSetInstallerWindowSize` | window size in 96 DPI pixels, the height fits the content by default |
 | `muSetInstallerString` | replaces any built-in text (`MU_STR_*`), e.g. for translations; `MU_STR_HEADING` "" hides the title under the logo |

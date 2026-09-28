@@ -119,6 +119,8 @@ extern "C"
     void muSetInstallerBackground(HMODULE hModule, const void* image, unsigned int size);   // optional image behind the gradient
     void muSetInstallerBackgroundResource(HMODULE hModule, const char* name, const char* type);
     void muSetInstallerBackgroundOverlay(HMODULE hModule, int opacityPercent);     // gradient opacity over the background image (default 70)
+    void muSetInstallerBackgroundBlur(HMODULE hModule, int radius);                // gaussian blur of the background image in 96 DPI pixels, 0 = sharp (default)
+    void muSetInstallerTextBackdropBlur(HMODULE hModule, int radius);              // background image blurred in a rectangle behind each line of text (like subtitles) and the install location box, 0 = off (default)
     void muSetInstallerColor(HMODULE hModule, int element, COLORREF color);        // MU_COLOR_*
     void muSetInstallerGradient(HMODULE hModule, COLORREF top, COLORREF bottom);
     void muSetInstallerFont(HMODULE hModule, const char* family);                  // e.g. "Segoe UI"
@@ -131,11 +133,14 @@ extern "C"
     void muSetInstallerIniMode(HMODULE hModule, int mode, bool userSelectable);    // MU_INI_*, userSelectable shows the choice in the installer
     void muSetLogFile(HMODULE hModule, const char* path);                          // log file for the updater/installer, NULL or "" disables it
 
-    // Installer: light and dark theme (MU_UI_MODERN). Colors and logos set above are used by both themes,
+    // Installer: light and dark theme (MU_UI_MODERN). Colors, logos and backgrounds set above are used by both themes,
     // these functions set them for MU_THEME_LIGHT or MU_THEME_DARK only, e.g. a dark gradient and a white logo for the dark theme.
     void muSetInstallerTheme(HMODULE hModule, int theme);                          // MU_THEME_AUTO (default), MU_THEME_LIGHT or MU_THEME_DARK
     void muSetInstallerThemeColor(HMODULE hModule, int theme, int element, COLORREF color); // MU_COLOR_*
     void muSetInstallerThemeGradient(HMODULE hModule, int theme, COLORREF top, COLORREF bottom);
     void muSetInstallerThemeLogo(HMODULE hModule, int theme, const void* image, unsigned int size);
     void muSetInstallerThemeLogoResource(HMODULE hModule, int theme, const char* name, const char* type);
+    void muSetInstallerThemeBackground(HMODULE hModule, int theme, const void* image, unsigned int size);
+    void muSetInstallerThemeBackgroundResource(HMODULE hModule, int theme, const char* name, const char* type);
+    void muSetInstallerThemeBackgroundOverlay(HMODULE hModule, int theme, int opacityPercent);
 }

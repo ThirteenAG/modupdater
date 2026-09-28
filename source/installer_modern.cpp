@@ -558,6 +558,9 @@ namespace mu::installer
             D2D1_SIZE_U logoSize = {};
             ComPtr<ID2D1Bitmap> background;
             D2D1_SIZE_U backgroundSize = {};
+            ComPtr<ID2D1Bitmap> backdrop;                   // the background picture blurred, shown behind the texts
+            D2D1_SIZE_U backdropSize = {};
+            ComPtr<ID2D1BitmapBrush> backdropBrush;
             std::map<UINT, ComPtr<ID2D1Bitmap>> shields;   // by pixel size
             ComPtr<ID2D1Bitmap> blurred;
             ComPtr<ID2D1BitmapBrush> acrylic;               // the blurred page, behind the location list
@@ -580,6 +583,9 @@ namespace mu::installer
             {
                 logo.Reset();
                 background.Reset();
+                backdrop.Reset();
+                backdropBrush.Reset();
+                backdropSize = {};
                 shields.clear();
                 DropBlur();
                 listShadow = {};
@@ -721,6 +727,8 @@ namespace mu::installer
             TextBlock MakeText(const std::wstring& text, IDWriteTextFormat* format, float width, DWRITE_TEXT_ALIGNMENT alignment, bool rich, int id);
             void Draw(Canvas& canvas, bool snapshotPass = false);
             void DrawBackground(Canvas& canvas);
+            ComPtr<ID2D1Bitmap> CreateBackgroundBitmap(Canvas& canvas, UINT width, UINT height, float blur);
+            void DrawTextBackdrops(Canvas& canvas, UINT width, UINT height);
             void DrawBlurredBackground(Canvas& canvas);
             ID2D1Bitmap* BlurredBitmap(Canvas& canvas);
             ID2D1BitmapBrush* AcrylicBrush(Canvas& canvas);
@@ -955,10 +963,12 @@ namespace mu::installer
             }
         }
 
+        // logo and background of the current theme
         void InstallerWindow::LoadImages()
         {
             LoadLogo();
-            backgroundImage = DecodeImage(graphics.wic.Get(), config.background);
+            auto& themed = config.Overrides(resolvedTheme).background;
+            backgroundImage = DecodeImage(graphics.wic.Get(), themed.empty() ? config.background : themed);
         }
 
         void InstallerWindow::LoadLogo()
@@ -978,7 +988,7 @@ namespace mu::installer
             Log(L"Windows switched to the {} mode", next == MU_THEME_DARK ? L"dark" : L"light");
             resolvedTheme = next;
             theme = MakeTheme(config, resolvedTheme);
-            LoadLogo();
+            LoadImages();
             screen.DropBitmaps();
             ui::SetWindowDarkMode(hwnd, theme.dark);
             if (snapshot || list.open)
@@ -1431,19 +1441,15 @@ namespace mu::installer
                 UINT pixelWidth = canvas.Pixels(size.width), pixelHeight = canvas.Pixels(size.height);
                 if (!canvas.background || canvas.backgroundSize.width != pixelWidth || canvas.backgroundSize.height != pixelHeight)
                 {
-                    // scale to cover the window, keep the aspect ratio
-                    UINT iw = 0, ih = 0;
-                    backgroundImage->GetSize(&iw, &ih);
-                    float scale = std::max(static_cast<float>(pixelWidth) / iw, static_cast<float>(pixelHeight) / ih);
-                    canvas.background = CreateScaledBitmap(graphics.wic.Get(), rt, backgroundImage.Get(), std::max(1u, static_cast<UINT>(iw * scale)), std::max(1u, static_cast<UINT>(ih * scale)));
+                    canvas.background = CreateBackgroundBitmap(canvas, pixelWidth, pixelHeight, static_cast<float>(config.backgroundBlur));
                     canvas.backgroundSize = D2D1::SizeU(pixelWidth, pixelHeight);
                 }
                 if (canvas.background)
                 {
-                    auto bitmapSize = canvas.background->GetSize();
-                    float x = (size.width - bitmapSize.width) / 2, y = (size.height - bitmapSize.height) / 2;
-                    rt->DrawBitmap(canvas.background.Get(), D2D1::RectF(x, y, x + bitmapSize.width, y + bitmapSize.height), 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
-                    overlay = std::clamp(config.backgroundOverlay, 0, 100) / 100.0f;
+                    rt->DrawBitmap(canvas.background.Get(), full, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+                    if (page == Page::Main && config.textBackdropBlur > 0)
+                        DrawTextBackdrops(canvas, pixelWidth, pixelHeight);
+                    overlay = std::clamp(config.Overrides(resolvedTheme).backgroundOverlay.value_or(config.backgroundOverlay), 0, 100) / 100.0f;
                 }
             }
 
@@ -1460,6 +1466,104 @@ namespace mu::installer
                 {
                     rt->FillRectangle(full, gradient.Get());
                 }
+            }
+        }
+
+        // The background picture covering a window of width x height pixels: the middle of the picture with the
+        // aspect ratio of the window, blurred when asked. A strong blur is made at a lower resolution,
+        // stretching the result adds to the blur.
+        ComPtr<ID2D1Bitmap> InstallerWindow::CreateBackgroundBitmap(Canvas& canvas, UINT width, UINT height, float blurDip)
+        {
+            UINT iw = 0, ih = 0;
+            backgroundImage->GetSize(&iw, &ih);
+            if (!iw || !ih || !width || !height)
+                return nullptr;
+
+            const double aspect = static_cast<double>(width) / height;
+            WICRect crop = { 0, 0, static_cast<INT>(iw), static_cast<INT>(ih) };
+            if (static_cast<double>(iw) / ih > aspect)
+            {
+                crop.Width = std::max(1, static_cast<INT>(std::lround(ih * aspect)));
+                crop.X = (static_cast<INT>(iw) - crop.Width) / 2;
+            }
+            else
+            {
+                crop.Height = std::max(1, static_cast<INT>(std::lround(iw / aspect)));
+                crop.Y = (static_cast<INT>(ih) - crop.Height) / 2;
+            }
+
+            const float blur = blurDip * canvas.dpi / 96.0f; // pixels
+            const UINT factor = blur >= 8.0f ? std::min(4u, static_cast<UINT>(blur / 4.0f)) : 1u;
+            ComPtr<IWICBitmapClipper> clipper;
+            ComPtr<IWICBitmapScaler> scaler;
+            if (FAILED(graphics.wic->CreateBitmapClipper(&clipper)) ||
+                FAILED(clipper->Initialize(backgroundImage.Get(), &crop)) ||
+                FAILED(graphics.wic->CreateBitmapScaler(&scaler)) ||
+                FAILED(scaler->Initialize(clipper.Get(), std::max(1u, width / factor), std::max(1u, height / factor), WICBitmapInterpolationModeFant)))
+            {
+                return nullptr;
+            }
+
+            ComPtr<ID2D1Bitmap> bitmap;
+            if (blur > 0)
+            {
+                // three box blur passes of radius r are close to a gaussian blur with sigma r
+                ComPtr<IWICBitmap> pixels;
+                if (FAILED(graphics.wic->CreateBitmapFromSource(scaler.Get(), WICBitmapCacheOnLoad, &pixels)))
+                    return nullptr;
+                BlurBitmap(pixels.Get(), std::max(1, static_cast<int>(std::lround(blur / factor))), 3);
+                canvas.rt->CreateBitmapFromWicBitmap(pixels.Get(), nullptr, &bitmap);
+            }
+            else
+            {
+                canvas.rt->CreateBitmapFromWicBitmap(scaler.Get(), nullptr, &bitmap);
+            }
+            return bitmap;
+        }
+
+        // The background picture blurred behind the lines of text of the main page, a rectangle
+        // around each line like the background of subtitles, and behind the translucent install
+        // location box. The rest of the picture stays sharp.
+        void InstallerWindow::DrawTextBackdrops(Canvas& canvas, UINT width, UINT height)
+        {
+            auto rt = canvas.rt.Get();
+            if (!canvas.backdrop || canvas.backdropSize.width != width || canvas.backdropSize.height != height)
+            {
+                canvas.backdrop = CreateBackgroundBitmap(canvas, width, height, static_cast<float>(config.textBackdropBlur));
+                canvas.backdropSize = D2D1::SizeU(width, height);
+                canvas.backdropBrush.Reset();
+            }
+            if (!canvas.backdrop || (!canvas.backdropBrush && FAILED(rt->CreateBitmapBrush(canvas.backdrop.Get(), &canvas.backdropBrush))))
+                return;
+            auto bitmapSize = canvas.backdrop->GetSize();
+            auto size = rt->GetSize();
+            canvas.backdropBrush->SetTransform(D2D1::Matrix3x2F::Scale(size.width / bitmapSize.width, size.height / bitmapSize.height));
+
+            constexpr float padX = 6.0f, padY = 1.5f, radius = 3.0f;
+            for (TextBlock* block : { &main.heading, &main.content, &main.label, &main.note, &main.checkbox, &main.footer })
+            {
+                if (!block->layout)
+                    continue;
+                // one hit test rectangle per line, empty lines have no width
+                auto length = static_cast<UINT32>(block->rich.text.size());
+                UINT32 count = 0;
+                block->layout->HitTestTextRange(0, length, block->origin.x, block->origin.y, nullptr, 0, &count);
+                std::vector<DWRITE_HIT_TEST_METRICS> lines(count);
+                if (!count || FAILED(block->layout->HitTestTextRange(0, length, block->origin.x, block->origin.y, lines.data(), count, &count)))
+                    continue;
+                for (auto& line : lines)
+                {
+                    if (line.width < 1.0f)
+                        continue;
+                    auto rect = D2D1::RectF(line.left - padX, line.top - padY, line.left + line.width + padX, line.top + line.height + padY);
+                    rt->FillRoundedRectangle(D2D1::RoundedRect(rect, radius, radius), canvas.backdropBrush.Get());
+                }
+            }
+
+            for (auto& box : { main.location, main.browse })
+            {
+                if (box.right > box.left)
+                    rt->FillRoundedRectangle(D2D1::RoundedRect(box, kBoxRadius, kBoxRadius), canvas.backdropBrush.Get());
             }
         }
 

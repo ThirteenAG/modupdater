@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -53,6 +54,10 @@ namespace test
     // (the table is 8-byte aligned and the security directory points to it)
     bool AddFakeSignature(const std::filesystem::path& file, size_t certificateSize = 4096);
 
-    // Average brightness (0 black ... 1 white) of an image file, -1 if it cannot be read
-    double AverageLuminance(const std::filesystem::path& image);
+    // Average brightness (0 black ... 1 white) of an image file or of 'area' in it, -1 if it cannot be read
+    double AverageLuminance(const std::filesystem::path& image, const RECT* area = nullptr);
+
+    // PNG data of an image, pixel(x, y) returns 0xAARRGGBB; empty on failure
+    std::string PngImage(int width, int height, const std::function<uint32_t(int x, int y)>& pixel);
+    std::string SolidImage(uint32_t argb, int width, int height);
 }

@@ -138,6 +138,9 @@ project "UpdaterLib"
    removefiles { "source/resources/*.rc" }
 
    defines { "STATICLIB" }
+   -- the vectorized algorithms of the STL call helpers that new toolset versions add all the time,
+   -- a project built with an older toolset could not link them (builddist.bat also uses an older toolset)
+   defines { "_USE_STD_VECTOR_ALGORITHMS=0" }
 
    filter "configurations:Debug"
       defines { "DEBUG" }

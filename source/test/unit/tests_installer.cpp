@@ -299,6 +299,9 @@ TEST_CASE(Installer_ThemeSettings)
     muSetInstallerThemeColor(module, MU_THEME_DARK, MU_COLOR_COUNT, RGB(7, 7, 7));    // ignored
     uint8_t logo[] = { 1, 2 };
     muSetInstallerThemeLogo(module, MU_THEME_DARK, logo, sizeof(logo));
+    uint8_t background[] = { 1, 2, 3 };
+    muSetInstallerThemeBackground(module, MU_THEME_LIGHT, background, sizeof(background));
+    muSetInstallerThemeBackgroundOverlay(module, MU_THEME_LIGHT, 25);
     muSetInstallerTheme(module, MU_THEME_DARK);
 
     auto config = LoadConfig(module);
@@ -312,6 +315,10 @@ TEST_CASE(Installer_ThemeSettings)
     CHECK(!config.dark.colors[MU_COLOR_BUTTON].has_value());
     CHECK_EQ(config.dark.logo.size(), size_t(2));
     CHECK(config.light.logo.empty());
+    CHECK_EQ(config.light.background.size(), size_t(3));
+    CHECK(config.dark.background.empty());
+    CHECK(config.light.backgroundOverlay == 25);
+    CHECK(!config.dark.backgroundOverlay.has_value());
     CHECK(&config.Overrides(MU_THEME_DARK) == &config.dark);
     CHECK(&config.Overrides(MU_THEME_LIGHT) == &config.light);
 
@@ -322,6 +329,102 @@ TEST_CASE(Installer_ThemeSettings)
     config.theme = MU_THEME_AUTO;
     CHECK_EQ(ResolveTheme(config), ui::IsDarkModeEnabled() ? MU_THEME_DARK : MU_THEME_LIGHT);
     test::Note(std::string("Windows app mode: ") + (ui::IsDarkModeEnabled() ? "dark" : "light"));
+}
+
+TEST_CASE(Installer_ThemeBackgrounds)
+{
+    // the picture of the theme in use: white for light, black for dark
+    auto white = test::SolidImage(0xFFFFFFFF, 64, 36);
+    auto black = test::SolidImage(0xFF000000, 64, 36);
+    REQUIRE(!white.empty() && !black.empty());
+
+    test::TempDir dir(L"theme-backgrounds");
+    Config config;
+    config.windowTitle = L"Test Mod";
+    config.backgroundOverlay = 0; // only the picture, no gradient over it
+    config.light.background.assign(white.begin(), white.end());
+    config.dark.background.assign(black.begin(), black.end());
+    auto brightness = [&](int theme, const wchar_t* name)
+    {
+        config.theme = theme;
+        auto png = dir / name;
+        REQUIRE(RenderModernPreview(config, L"main", 96, png));
+        double luminance = test::AverageLuminance(png);
+        test::Note(std::format("{}: {:.2f}", toString(name), luminance));
+        return luminance;
+    };
+    CHECK(brightness(MU_THEME_LIGHT, L"light.png") > 0.8);
+    CHECK(brightness(MU_THEME_DARK, L"dark.png") < 0.2);
+
+    // a theme without its own picture shows the one for both themes
+    config.background.assign(black.begin(), black.end());
+    config.light.background.clear();
+    CHECK(brightness(MU_THEME_LIGHT, L"shared.png") < 0.35);
+
+    // the overlay of one theme: the light gradient covers the black picture completely, the dark theme still shows it
+    config.light.backgroundOverlay = 100;
+    CHECK(brightness(MU_THEME_LIGHT, L"light-overlay.png") > 0.6);
+    CHECK(brightness(MU_THEME_DARK, L"dark-overlay.png") < 0.2);
+}
+
+TEST_CASE(Installer_BackgroundBlur)
+{
+    // black on the left, white on the right: blurred, the edge turns gray
+    auto split = test::PngImage(160, 90, [](int x, int) { return x < 80 ? 0xFF000000u : 0xFFFFFFFFu; });
+    REQUIRE(!split.empty());
+
+    test::TempDir dir(L"background-blur");
+    Config config;
+    config.theme = MU_THEME_LIGHT;
+    config.backgroundOverlay = 0;
+    config.background.assign(split.begin(), split.end());
+    auto nearEdge = [&](int blur, UINT dpi, const wchar_t* name)
+    {
+        config.backgroundBlur = blur;
+        auto png = dir / name;
+        REQUIRE(RenderModernPreview(config, L"main", dpi, png));
+        // a strip left of the middle of the window, above everything else on the page
+        const LONG scale = static_cast<LONG>(dpi), middle = 360 * scale / 96;
+        RECT area = { middle - 14 * scale / 96, 4, middle - 6 * scale / 96, 24 };
+        double luminance = test::AverageLuminance(png, &area);
+        test::Note(std::format("{}: {:.2f}", toString(name), luminance));
+        return luminance;
+    };
+    CHECK(nearEdge(0, 96, L"sharp.png") < 0.05);
+    CHECK(nearEdge(16, 96, L"blurred.png") > 0.15);
+    CHECK(nearEdge(16, 144, L"blurred-144.png") > 0.15);
+}
+
+TEST_CASE(Installer_TextBackdropBlur)
+{
+    // black on the left, white on the right, lines of text over the edge in the middle
+    auto split = test::PngImage(160, 90, [](int x, int) { return x < 80 ? 0xFF000000u : 0xFFFFFFFFu; });
+    REQUIRE(!split.empty());
+
+    test::TempDir dir(L"text-backdrop");
+    Config config;
+    config.theme = MU_THEME_LIGHT;
+    config.backgroundOverlay = 0;
+    config.background.assign(split.begin(), split.end());
+    config.content = L"First line\nSecond line\nThird line\nFourth line";
+    auto render = [&](int blur, const wchar_t* name)
+    {
+        config.textBackdropBlur = blur;
+        auto png = dir / name;
+        REQUIRE(RenderModernPreview(config, L"main", 96, png));
+        return png;
+    };
+    auto sharp = render(0, L"sharp.png");
+    auto backdrop = render(12, L"backdrop.png");
+
+    // the texts and everything else are drawn the same way: only the picture behind the texts changes
+    RECT above = { 346, 4, 354, 24 };
+    RECT beside = { 346, 40, 354, 400 };
+    double aboveSharp = test::AverageLuminance(sharp, &above), aboveBackdrop = test::AverageLuminance(backdrop, &above);
+    double besideSharp = test::AverageLuminance(sharp, &beside), besideBackdrop = test::AverageLuminance(backdrop, &beside);
+    test::Note(std::format("above the texts {:.3f} -> {:.3f}, beside the edge {:.3f} -> {:.3f}", aboveSharp, aboveBackdrop, besideSharp, besideBackdrop));
+    CHECK(std::abs(aboveBackdrop - aboveSharp) < 0.005);
+    CHECK(besideBackdrop > besideSharp + 0.02);
 }
 
 TEST_CASE(Installer_ThemeRendering)

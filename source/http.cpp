@@ -213,7 +213,7 @@ namespace mu::http
             Configure(session, url, options);
             session.SetTimeout(cpr::Timeout{ 0 }); // no total limit for large files, LowSpeed detects stalls
             session.SetHeader(BuildHeaders(url, options, rangeFrom));
-            session.SetLowSpeed(cpr::LowSpeed{ options.lowSpeedLimit, options.lowSpeedTimeSec });
+            session.SetLowSpeed(cpr::LowSpeed{ options.lowSpeedLimit, std::chrono::seconds(options.lowSpeedTimeSec) });
             session.SetHeaderCallback(cpr::HeaderCallback{ [&](const std::string_view& line, intptr_t) -> bool
             {
                 // every response in a redirect chain starts with a status line

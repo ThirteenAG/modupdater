@@ -47,6 +47,12 @@ namespace mu
         InstallerTheme = 213,
         InstallerLightLogo = 214,
         InstallerDarkLogo = 215,
+        InstallerLightBackground = 216,
+        InstallerDarkBackground = 217,
+        InstallerLightBackgroundOverlay = 218,
+        InstallerDarkBackgroundOverlay = 219,
+        InstallerBackgroundBlur = 220,
+        InstallerTextBackdropBlur = 221,
 
         InstallerColorBase = 1000,     // + MU_COLOR_*
         InstallerStringBase = 2000,    // + MU_STR_*

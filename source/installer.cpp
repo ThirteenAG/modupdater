@@ -264,6 +264,8 @@ namespace mu::installer
         if (auto v = FindValue(s, K(Key::InstallerBackground)))
             config.background = v->blob;
         config.backgroundOverlay = static_cast<int>(GetInt(s, K(Key::InstallerBackgroundOverlay), 70));
+        config.backgroundBlur = static_cast<int>(std::clamp<int64_t>(GetInt(s, K(Key::InstallerBackgroundBlur)), 0, 100));
+        config.textBackdropBlur = static_cast<int>(std::clamp<int64_t>(GetInt(s, K(Key::InstallerTextBackdropBlur)), 0, 100));
         if (auto v = FindValue(s, K(Key::InstallerFontData)))
             config.fontData = v->blob;
         config.fontFamily = toWString(GetString(s, K(Key::InstallerFontFamily)));
@@ -284,6 +286,14 @@ namespace mu::installer
             config.light.logo = v->blob;
         if (auto v = FindValue(s, K(Key::InstallerDarkLogo)))
             config.dark.logo = v->blob;
+        if (auto v = FindValue(s, K(Key::InstallerLightBackground)))
+            config.light.background = v->blob;
+        if (auto v = FindValue(s, K(Key::InstallerDarkBackground)))
+            config.dark.background = v->blob;
+        if (auto v = FindValue(s, K(Key::InstallerLightBackgroundOverlay)))
+            config.light.backgroundOverlay = static_cast<int>(v->num);
+        if (auto v = FindValue(s, K(Key::InstallerDarkBackgroundOverlay)))
+            config.dark.backgroundOverlay = static_cast<int>(v->num);
         for (int i = 0; i < MU_STR_COUNT; i++)
         {
             if (auto v = FindValue(s, Key::InstallerStringBase + i))
