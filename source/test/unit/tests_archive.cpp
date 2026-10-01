@@ -230,13 +230,9 @@ TEST_CASE(Extract_IniModes)
         return test::ReadFile(game / L"Mod.ini");
     };
 
+    // the layout of the new file with the user's values, new keys, the user's own keys at the end of their section
     auto merged = run(IniMode::Merge);
-    test::Note("merged:\n" + merged);
-    CHECK(merged.find("; new file") != std::string::npos);    // layout of the new file
-    CHECK(merged.find("A = 1") != std::string::npos);         // user values kept
-    CHECK(merged.find("B = 2") != std::string::npos);
-    CHECK(merged.find("NewKey = 3") != std::string::npos);    // new keys added
-    CHECK(merged.find("C = 5") != std::string::npos);
+    CHECK_EQ(merged, std::string("; new file\n[MAIN]\nA = 1\nB = 2\nNewKey = 3\nUserKey = user\n\n[EXTRA]\nC = 5\n"));
 
     auto replaced = run(IniMode::Replace);
     CHECK(replaced.find("A = 10") != std::string::npos);
@@ -296,6 +292,110 @@ TEST_CASE(Extract_ReportsLockedFiles)
     CHECK_EQ(test::ReadFile(locked), std::string("old"));
     CHECK_EQ(test::ReadFile(game / L"other.txt"), std::string("other")); // the rest is still installed
     CHECK(!test::Exists(game / L"locked.img.mu-tmp"));
+}
+
+TEST_CASE(Extract_PendingLockedFiles)
+{
+    // The updater runs inside the game: an archive it keeps open waits next to it for the next launch
+    test::TempDir dir(L"pending");
+    auto game = dir / L"game";
+    auto locked = game / L"locked.img";
+    auto pending = game / L"locked.img.mu-pending";
+    test::WriteFile(locked, "old");
+    HANDLE h = CreateFileW(locked.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    REQUIRE(h != INVALID_HANDLE_VALUE);
+
+    auto zip = dir / L"Mod.zip";
+    REQUIRE(test::CreateZip(zip, { { "locked.img", "new" }, { "other.txt", "other" } }));
+    zip::Reader reader;
+    REQUIRE(reader.Open(zip));
+    ExtractOptions options;
+    options.allowPending = true;
+    ExtractReport report;
+    CHECK(ExtractArchive(reader, game, options, {}, report));
+    CHECK(report.errors.empty());
+    REQUIRE(report.pending.size() == 1);
+    CHECK(report.pending.front().name == L"locked.img");
+    CHECK(report.pending.front().file == pending);
+    CHECK_EQ(test::ReadFile(locked), std::string("old"));
+    CHECK_EQ(test::ReadFile(pending), std::string("new"));
+    CHECK_EQ(test::ReadFile(game / L"other.txt"), std::string("other"));
+    CHECK(!test::Exists(game / L"locked.img.mu-tmp"));
+
+    // still open: it keeps waiting
+    auto list = dir / L"modupdater.pending";
+    REQUIRE(AddPendingFiles(list, { pending }));
+    REQUIRE(AddPendingFiles(list, { pending })); // no duplicates
+    auto busy = ApplyPendingFiles(list);
+    CHECK(busy.applied.empty());
+    REQUIRE(busy.remaining.size() == 1);
+    CHECK_EQ(test::ReadFile(list), toString(pending.wstring()) + "\r\n");
+    CHECK_EQ(test::ReadFile(locked), std::string("old"));
+
+    // closed: it is put in place and the list goes away
+    CloseHandle(h);
+    auto done = ApplyPendingFiles(list);
+    REQUIRE(done.applied.size() == 1);
+    CHECK(done.applied.front() == locked);
+    CHECK(done.remaining.empty());
+    CHECK_EQ(test::ReadFile(locked), std::string("new"));
+    CHECK(!test::Exists(pending));
+    CHECK(!test::Exists(list));
+
+    // the list only replaces "x" with an existing "x.mu-pending"
+    test::WriteFile(list, toString((game / L"other.txt").wstring()) + "\r\n" + toString((game / L"gone.mu-pending").wstring()) + "\r\n");
+    auto ignored = ApplyPendingFiles(list);
+    CHECK(ignored.applied.empty());
+    CHECK(ignored.remaining.empty());
+    CHECK_EQ(test::ReadFile(game / L"other.txt"), std::string("other"));
+    CHECK(!test::Exists(list));
+}
+
+TEST_CASE(Pending_AppliedWhenTheGameStartsAgain)
+{
+    // "Restart the game to apply changes": the new game process starts while the old one still has the archive
+    // open, the library waits for the old process when the new one loads it and puts the archive in place
+    test::TempDir dir(L"restart");
+    auto game = dir / L"game";
+    std::filesystem::create_directories(game / L"update");
+    auto exe = game / L"Game.exe";
+    REQUIRE(CopyFileW((test::BinDir() / L"UnitTests.exe").c_str(), exe.c_str(), FALSE));
+    auto archive = game / L"update" / L"data.img";
+    test::WriteFile(archive, "old");
+
+    std::wstring command = test::Quote(exe.wstring()) + L" --hold " + test::Quote(archive.wstring()) + L" 2500";
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION oldGame = {};
+    REQUIRE(CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &oldGame));
+    auto held = archive;
+    held += L".held";
+    for (int i = 0; i < 200 && !test::Exists(held); i++)
+        Sleep(25);
+    REQUIRE(test::Exists(held));
+
+    // what the update left behind
+    auto pending = archive;
+    pending += kPendingSuffix;
+    test::WriteFile(pending, "new");
+    REQUIRE(AddPendingFiles(game / kPendingListName, { pending }));
+
+    // started by someone else while the archive is open: it waits for the next launch
+    CHECK_EQ(test::RunProcess(test::Quote(exe.wstring()) + L" --startup", 30000), 0);
+    CHECK_EQ(test::ReadFile(archive), std::string("old"));
+    CHECK(test::Exists(game / kPendingListName));
+
+    // restarted by the updater
+    SetEnvironmentVariableW(L"MODUPDATER_WAIT_PID", std::to_wstring(oldGame.dwProcessId).c_str());
+    int code = test::RunProcess(test::Quote(exe.wstring()) + L" --startup", 30000);
+    SetEnvironmentVariableW(L"MODUPDATER_WAIT_PID", nullptr);
+    WaitForSingleObject(oldGame.hProcess, 10000);
+    CloseHandle(oldGame.hThread);
+    CloseHandle(oldGame.hProcess);
+
+    CHECK_EQ(code, 0);
+    CHECK_EQ(test::ReadFile(archive), std::string("new"));
+    CHECK(!test::Exists(pending));
+    CHECK(!test::Exists(game / kPendingListName));
 }
 
 TEST_CASE(Extract_Cancel)

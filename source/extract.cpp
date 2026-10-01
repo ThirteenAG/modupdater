@@ -1,34 +1,54 @@
 #include "stdafx.h"
 #include "extract.h"
 #include "fileops.h"
+#include "inimerge.h"
 #include "log.h"
 #include "string_funcs.h"
-#include "mINI\src\mini\ini.h"
 
 namespace mu
 {
+    namespace
+    {
+        bool ReadWholeFile(const std::filesystem::path& file, std::string& content)
+        {
+            std::ifstream in(file, std::ios::binary);
+            if (!in)
+                return false;
+            content.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+            return !in.bad();
+        }
+    }
+
     bool MergeIniFiles(const std::filesystem::path& oldIni, const std::filesystem::path& newIni)
     {
         try
         {
-            mINI::INIFile oldFile(oldIni);
-            mINI::INIStructure oldStruct;
-            if (!oldFile.read(oldStruct) || oldStruct.size() == 0)
-                return false;
-
-            mINI::INIFile newFile(newIni);
-            mINI::INIStructure newStruct;
-            newFile.read(newStruct);
-
-            for (auto const& it : oldStruct)
+            std::string oldText, newText;
+            if (!ReadWholeFile(oldIni, oldText) || !ReadWholeFile(newIni, newText))
             {
-                auto const& section = std::get<0>(it);
-                auto const& collection = std::get<1>(it);
-                for (auto const& it2 : collection)
-                    newStruct[section][std::get<0>(it2)] = std::get<1>(it2);
+                Log(L"Cannot merge {}: {}", oldIni.wstring(), Win32ErrorMessage(GetLastError()));
+                return false;
             }
+            if (oldText.find('=') == std::string::npos)
+                return false; // no settings
 
-            return newFile.write(newStruct, true);
+            auto merged = MergeIniText(oldText, newText);
+            if (merged == newText)
+                return true;
+
+            // a failed write leaves the new file as it is
+            auto temp = newIni;
+            temp += kTempFileSuffix;
+            {
+                std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+                out.write(merged.data(), static_cast<std::streamsize>(merged.size()));
+                out.close();
+                if (out && MoveFileExW(temp.c_str(), newIni.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                    return true;
+            }
+            Log(L"Cannot merge {}: {}", oldIni.wstring(), Win32ErrorMessage(GetLastError()));
+            DeleteFileW(temp.c_str());
+            return false;
         }
         catch (const std::exception& e)
         {
@@ -172,7 +192,7 @@ namespace mu
             }
 
             std::wstring error;
-            switch (ReplaceFileWith(target, temp, &error))
+            switch (ReplaceFileWith(target, temp, &error, options.allowPending))
             {
             case ReplaceResult::Replaced:
                 report.written++;
@@ -183,6 +203,14 @@ namespace mu
                 report.inUse++;
                 Log(L"{} was updated successfully (it was in use).", entry.name);
                 break;
+            case ReplaceResult::Pending:
+            {
+                auto pending = target;
+                pending += kPendingSuffix;
+                report.pending.push_back({ entry.name, pending });
+                Log(L"{} is in use, it will be updated on the next launch.", entry.name);
+                break;
+            }
             case ReplaceResult::Failed:
                 DeleteFileW(temp.c_str());
                 report.errors.push_back(Format(L"{}: {}", entry.name, error));

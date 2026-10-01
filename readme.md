@@ -49,7 +49,9 @@ muSetUpdateURL(hm, "https://github.com/User/Repo/releases/latest/download/Mod.zi
 muInit();
 ```
 
-Several plugins in the same process share one update check and one dialog. Files that are in use (the loaded plugin itself) are renamed to `*.deleteonnextlaunch` and removed on the next start. Errors (download failed, file locked by the game...) are shown instead of a success message.
+Several plugins in the same process share one update check and one dialog. Files that are in use (the loaded plugin itself) are renamed to `*.deleteonnextlaunch` and removed on the next start. Files the game keeps open without allowing that (archives like `.img` files) wait next to their targets as `*.mu-pending`, listed in `modupdater.pending` next to the game executable; the next start of the game puts them in place while it loads the module, before the game opens them, and after "Restart the game" it first waits for the old game process to exit. Errors (download failed, no write access...) are shown instead of a success message.
+
+Ini files are merged by default ("replace all and keep settings"): the new file with its layout, comments and new keys, and the values of the old one. Sections and keys are compared ignoring the case, keys and sections that only the old file has are kept. The old file goes to the recycle bin.
 
 ### Installer
 

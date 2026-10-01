@@ -21,6 +21,13 @@ namespace mu
         IniMode iniMode = IniMode::Merge;
         std::string password;
         bool checkDiskSpace = true;
+        bool allowPending = false;  // files that are in use and cannot be replaced wait for the next launch (ReplaceResult::Pending)
+    };
+
+    struct PendingFile
+    {
+        std::wstring name;              // entry name
+        std::filesystem::path file;     // the new file next to its target (target.mu-pending)
     };
 
     struct ExtractProgress
@@ -36,6 +43,7 @@ namespace mu
         int merged = 0;             // ini files that kept the existing settings
         int skipped = 0;            // existing ini files that were left alone
         int inUse = 0;              // files that were in use; the old copies are removed on next launch
+        std::vector<PendingFile> pending;   // files that were in use and wait for the next launch (allowPending)
         bool cancelled = false;
         std::vector<std::wstring> errors;
 

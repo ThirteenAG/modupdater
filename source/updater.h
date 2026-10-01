@@ -47,6 +47,7 @@ namespace mu::updater
         bool cancelled = false;
         int filesWritten = 0;
         int filesInUse = 0;
+        std::vector<PendingFile> pending;   // in use, they wait for the next launch (add them to the pending list)
         std::vector<std::wstring> errors;
 
         bool ok() const { return !cancelled && errors.empty(); }

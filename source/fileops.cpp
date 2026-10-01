@@ -191,7 +191,7 @@ namespace mu
         return freeToCaller.QuadPart;
     }
 
-    ReplaceResult ReplaceFileWith(const std::filesystem::path& target, const std::filesystem::path& source, std::wstring* error)
+    ReplaceResult ReplaceFileWith(const std::filesystem::path& target, const std::filesystem::path& source, std::wstring* error, bool allowPending)
     {
         DWORD attrs = GetFileAttributesW(target.c_str());
         if (attrs != INVALID_FILE_ATTRIBUTES)
@@ -242,11 +242,90 @@ namespace mu
                 MoveFileExW(backup.c_str(), target.c_str(), 0); // roll back
                 break;
             }
+
+            // Open without delete sharing (an archive the game reads), not even a rename works while it is open
+            if (allowPending && (err == ERROR_SHARING_VIOLATION || err == ERROR_LOCK_VIOLATION))
+            {
+                auto pending = target;
+                pending += kPendingSuffix;
+                SetFileAttributesW(pending.c_str(), FILE_ATTRIBUTE_NORMAL);
+                if (MoveFileExW(source.c_str(), pending.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                {
+                    Log(L"{} is in use, the new file waits as {}", target.filename().wstring(), pending.filename().wstring());
+                    return ReplaceResult::Pending;
+                }
+                err = GetLastError();
+            }
         }
 
         if (error)
             *error = Win32ErrorMessage(err);
         return ReplaceResult::Failed;
+    }
+
+    namespace
+    {
+        std::vector<std::filesystem::path> ReadPendingList(const std::filesystem::path& list)
+        {
+            std::vector<std::filesystem::path> files;
+            std::ifstream in(list, std::ios::binary);
+            std::string line;
+            while (std::getline(in, line))
+            {
+                while (!line.empty() && (line.back() == '\r' || line.back() == ' '))
+                    line.pop_back();
+                if (!line.empty())
+                    files.push_back(toWString(line));
+            }
+            return files;
+        }
+
+        bool WritePendingList(const std::filesystem::path& list, const std::vector<std::filesystem::path>& files)
+        {
+            if (files.empty())
+                return DeleteFileW(list.c_str()) || GetLastError() == ERROR_FILE_NOT_FOUND;
+
+            std::ofstream out(list, std::ios::binary | std::ios::trunc);
+            for (auto& file : files)
+                out << toString(file.wstring()) << "\r\n";
+            out.close();
+            return !out.fail();
+        }
+    }
+
+    bool AddPendingFiles(const std::filesystem::path& list, const std::vector<std::filesystem::path>& files)
+    {
+        auto entries = ReadPendingList(list);
+        for (auto& file : files)
+        {
+            if (std::none_of(entries.begin(), entries.end(), [&](const std::filesystem::path& entry) { return iequals(entry.wstring(), file.wstring()); }))
+                entries.push_back(file);
+        }
+        return WritePendingList(list, entries);
+    }
+
+    PendingResult ApplyPendingFiles(const std::filesystem::path& list)
+    {
+        PendingResult result;
+        if (GetFileAttributesW(list.c_str()) == INVALID_FILE_ATTRIBUTES)
+            return result;
+
+        const size_t suffixLength = std::size(kPendingSuffix) - 1;
+        for (auto& pending : ReadPendingList(list))
+        {
+            // "x.mu-pending" can only replace "x"
+            auto name = pending.filename().wstring();
+            if (name.size() <= suffixLength || !ends_with(name, kPendingSuffix, false) || GetFileAttributesW(pending.c_str()) == INVALID_FILE_ATTRIBUTES)
+                continue;
+
+            auto target = pending.parent_path() / name.substr(0, name.size() - suffixLength);
+            if (ReplaceFileWith(target, pending) == ReplaceResult::Failed)
+                result.remaining.push_back(pending);
+            else
+                result.applied.push_back(target);
+        }
+        WritePendingList(list, result.remaining);
+        return result;
     }
 
     bool MoveToRecycleBin(const std::filesystem::path& file)

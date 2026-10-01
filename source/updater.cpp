@@ -43,6 +43,66 @@ bool reqElev;
 
 namespace
 {
+    // Set for the game that the updater restarts: the files that were in use are free once the old process has exited
+    constexpr wchar_t kWaitForProcessVariable[] = L"MODUPDATER_WAIT_PID";
+
+    std::vector<std::wstring>& StartupMessages()
+    {
+        static std::vector<std::wstring> messages;
+        return messages;
+    }
+
+    void LogStartupMessages()
+    {
+        for (auto& message : StartupMessages())
+            Log(L"{}", message);
+        StartupMessages().clear();
+    }
+
+    // Files that the game kept open during an update (archives it reads all the time) wait next to their targets.
+    // They are put in place while the next process loads this module, before the game opens them again. This runs
+    // during the static initialization of the module: no Log() yet, InitModupdater logs the messages.
+    struct PendingFilesAtStartup
+    {
+        PendingFilesAtStartup()
+        {
+            try
+            {
+                DWORD waitFor = 0;
+                wchar_t buffer[16] = {};
+                DWORD length = GetEnvironmentVariableW(kWaitForProcessVariable, buffer, static_cast<DWORD>(std::size(buffer)));
+                if (length > 0 && length < std::size(buffer))
+                {
+                    waitFor = wcstoul(buffer, nullptr, 10);
+                    SetEnvironmentVariableW(kWaitForProcessVariable, nullptr); // not for the processes the game starts
+                }
+
+                auto list = GetModuleFilePath(nullptr).parent_path() / kPendingListName;
+                if (GetFileAttributesW(list.c_str()) == INVALID_FILE_ATTRIBUTES)
+                    return;
+
+                if (waitFor && waitFor != GetCurrentProcessId())
+                {
+                    if (HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, waitFor))
+                    {
+                        WaitForSingleObject(process, 15000);
+                        CloseHandle(process);
+                    }
+                }
+
+                auto result = ApplyPendingFiles(list);
+                for (auto& file : result.applied)
+                    StartupMessages().push_back(Format(L"{} was updated, it was in use during the update.", file.wstring()));
+                for (auto& file : result.remaining)
+                    StartupMessages().push_back(Format(L"{} is still in use, it waits for the next launch.", file.wstring()));
+            }
+            catch (...)
+            {
+                // never take the game down while it loads
+            }
+        }
+    } pendingFilesAtStartup;
+
     std::wstring PluginMarkerName()
     {
         return Format(L"Local\\modupdater.plugin.{}", GetCurrentProcessId());
@@ -481,7 +541,7 @@ namespace mu::updater
         if (singleFile)
         {
             std::wstring error;
-            switch (ReplaceFileWith(target, download, &error))
+            switch (ReplaceFileWith(target, download, &error, true))
             {
             case ReplaceResult::ReplacedInUse:
                 result.filesInUse++;
@@ -490,6 +550,14 @@ namespace mu::updater
                 result.filesWritten++;
                 Log(L"{} was updated successfully.", update.wszFileName);
                 break;
+            case ReplaceResult::Pending:
+            {
+                auto pending = target;
+                pending += kPendingSuffix;
+                result.pending.push_back({ update.wszFileName, pending });
+                Log(L"{} is in use, it will be updated on the next launch.", update.wszFileName);
+                break;
+            }
             case ReplaceResult::Failed:
                 DeleteFileW(download.c_str());
                 result.errors.push_back(Format(L"{}: {}", update.wszFileName, error));
@@ -569,6 +637,7 @@ namespace mu::updater
         ExtractOptions extractOptions;
         extractOptions.iniMode = iniMode;
         extractOptions.password = update.szPassword;
+        extractOptions.allowPending = true; // archives the game keeps open are replaced when it starts again
         ExtractReport extractReport;
         std::wstring lastFile;
         ExtractArchive(reader, unpackDir, extractOptions, [&](const ExtractProgress& p)
@@ -589,6 +658,7 @@ namespace mu::updater
         result.errors = extractReport.errors;
         result.filesWritten = extractReport.written;
         result.filesInUse = extractReport.inUse;
+        result.pending = extractReport.pending;
         return result;
     }
 }
@@ -701,6 +771,7 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
                     total.cancelled |= result.cancelled;
                     total.filesWritten += result.filesWritten;
                     total.filesInUse += result.filesInUse;
+                    total.pending.insert(total.pending.end(), result.pending.begin(), result.pending.end());
                     total.errors.insert(total.errors.end(), result.errors.begin(), result.errors.end());
                 }
             }
@@ -717,6 +788,17 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
         progress.cancel = true;
     worker.join();
 
+    // files the game keeps open are put in place when it starts again (also after a cancel, they are written already)
+    if (!total.pending.empty())
+    {
+        std::vector<std::filesystem::path> files;
+        for (auto& pending : total.pending)
+            files.push_back(pending.file);
+        auto list = modulePath / kPendingListName;
+        if (!AddPendingFiles(list, files))
+            total.errors.push_back(Format(L"Cannot write {}: {}", list.wstring(), Win32ErrorMessage(GetLastError())));
+    }
+
     if (progress.cancel || total.cancelled)
     {
         Log(L"Update cancelled or error occured.");
@@ -732,9 +814,19 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
 
     std::wstring content;
     std::wstring mainInstruction = L"Update completed successfully.";
+    if (!total.pending.empty())
+    {
+        content += L"The game is using these files, they will be updated when it starts again:\n";
+        for (size_t i = 0; i < total.pending.size() && i < 8; i++)
+            content += total.pending[i].name + L"\n";
+        if (total.pending.size() > 8)
+            content += Format(L"...and {} more.\n", total.pending.size() - 8);
+    }
     if (!total.errors.empty())
     {
         mainInstruction = total.filesWritten ? L"Update completed with errors." : L"Update failed.";
+        if (!content.empty())
+            content += L"\n";
         for (size_t i = 0; i < total.errors.size() && i < 8; i++)
             content += total.errors[i] + L"\n";
         if (total.errors.size() > 8)
@@ -748,10 +840,11 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
         { BUTTONID5, L"Continue" },
     };
 
+    const bool changed = total.filesWritten || !total.pending.empty();
     TASKDIALOGCONFIG tdcResult = { sizeof(TASKDIALOGCONFIG) };
     tdcResult.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS | TDF_ENABLE_HYPERLINKS | TDF_SIZE_TO_CONTENT | TDF_CAN_BE_MINIMIZED;
-    tdcResult.pButtons = total.filesWritten ? aCustomButtons3 : aCustomButtons3 + 1;
-    tdcResult.cButtons = total.filesWritten ? 2 : 1;
+    tdcResult.pButtons = changed ? aCustomButtons3 : aCustomButtons3 + 1;
+    tdcResult.cButtons = changed ? 2 : 1;
     tdcResult.pszWindowTitle = L"modupdater";
     tdcResult.pszMainInstruction = mainInstruction.c_str();
     tdcResult.pszContent = content.c_str();
@@ -761,8 +854,12 @@ void ShowUpdateDialog(std::vector<FileUpdateInfo>& FilesToUpdate, std::vector<Fi
     hr = TaskDialogIndirect(&tdcResult, &nClickedBtnID, nullptr, nullptr);
     if (SUCCEEDED(hr) && nClickedBtnID == BUTTONID4)
     {
+        // the new process puts the waiting files in place once this one has exited and closed them
+        if (!total.pending.empty())
+            SetEnvironmentVariableW(kWaitForProcessVariable, std::to_wstring(GetCurrentProcessId()).c_str());
         if (ui::RestartProcess(false, ui::GetProcessArguments()))
             ExitProcess(0);
+        SetEnvironmentVariableW(kWaitForProcessVariable, nullptr);
     }
     ReturnFocusToGame();
 }
@@ -820,7 +917,7 @@ void ProcessFiles()
     FindFilesRecursively(modulePath, [&](const std::filesystem::path& file, const WIN32_FIND_DATAW& fd)
     {
         auto strFileName = file.filename().wstring();
-        if (ends_with(strFileName, kDeleteOnNextLaunchSuffix, false) || ends_with(strFileName, kTempFileSuffix, false))
+        if (ends_with(strFileName, kDeleteOnNextLaunchSuffix, false) || ends_with(strFileName, kTempFileSuffix, false) || ends_with(strFileName, kPendingSuffix, false))
             return;
 
         std::wstring machine;
@@ -945,6 +1042,7 @@ void InitModupdater()
         CleanupLeftovers(modulePath);
     }).detach();
 #endif
+    LogStartupMessages();
 
     auto now = date::floor<std::chrono::seconds>(std::chrono::system_clock::now());
     date::sys_seconds tp;
@@ -1002,6 +1100,7 @@ void InitModupdater()
             break;
         }
     }
+    LogStartupMessages();
 
     Log(L"Current directory: {}", modulePath.wstring());
     reqElev = !CanAccessFolder(modulePath, GENERIC_READ | GENERIC_WRITE);

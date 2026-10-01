@@ -281,9 +281,7 @@ TEST_CASE(Updater_ApplyUpdate)
     for (auto& e : result.errors)
         test::Note(toString(e));
     CHECK_EQ(test::ReadFile(plugin), std::string("new asi"));
-    auto ini = test::ReadFile(game / L"plugins" / L"Mod.ini");
-    CHECK(ini.find("Setting = 7") != std::string::npos);
-    CHECK(ini.find("Added = 2") != std::string::npos);
+    CHECK_EQ(test::ReadFile(game / L"plugins" / L"Mod.ini"), std::string("[MAIN]\nSetting = 7\nAdded = 2\n"));
     CHECK(test::Exists(game / L"update" / L"data.img"));      // extracted relative to the game folder
     CHECK(!test::Exists(game / L"plugins" / L"Mod.zip.modupdater"));
     CHECK(!statuses.empty());
@@ -303,6 +301,18 @@ TEST_CASE(Updater_ApplyUpdate)
     auto mismatch = updater::ApplyUpdate(update, IniMode::Merge, "", {});
     CHECK(!mismatch.ok());
     CHECK(!test::Exists(game / L"plugins" / L"Other.dll"));
+
+    // an archive the game keeps open waits for the next launch, it is no error
+    update.wszDownloadURL = toWString(server.Url("/Mod.zip"));
+    update.wszDownloadName = L"Mod.zip";
+    HANDLE archive = CreateFileW((game / L"update" / L"data.img").c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+    REQUIRE(archive != INVALID_HANDLE_VALUE);
+    auto busy = updater::ApplyUpdate(update, IniMode::Merge, "", {});
+    CloseHandle(archive);
+    CHECK(busy.ok());
+    REQUIRE(busy.pending.size() == 1);
+    CHECK(busy.pending.front().name == L"update/data.img");
+    CHECK(test::Exists(game / L"update" / L"data.img.mu-pending"));
 
     // a single file download replaces the file directly
     test::Resource single;

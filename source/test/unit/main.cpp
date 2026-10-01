@@ -1,8 +1,10 @@
 #include <windows.h>
+#include <shellapi.h>
 #include "test.h"
 #include <chrono>
 #include <cstdio>
 #include <exception>
+#include <string>
 #include "log.h"
 
 // UnitTests.exe [filter...]  runs all tests whose name contains one of the filters.
@@ -13,6 +15,36 @@ namespace test
     {
         int failures = 0;
         bool currentFailed = false;
+
+        // Modes for tests that need a second process (a copy of this executable in another folder),
+        // -1 when the arguments are test filters
+        int RunHelperMode()
+        {
+            int count = 0;
+            LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &count);
+            if (!argv)
+                return -1;
+            std::vector<std::wstring> args(argv, argv + count);
+            LocalFree(argv);
+
+            // the library did its work (pending files) while the process started
+            if (args.size() >= 2 && args[1] == L"--startup")
+                return 0;
+
+            // --hold <file> <ms>: keeps a file open without delete sharing, like a game keeps its archives open,
+            // and creates <file>.held once it is open
+            if (args.size() >= 4 && args[1] == L"--hold")
+            {
+                HANDLE file = CreateFileW(args[2].c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+                if (file == INVALID_HANDLE_VALUE)
+                    return 1;
+                CloseHandle(CreateFileW((args[2] + L".held").c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr));
+                Sleep(static_cast<DWORD>(_wtoi(args[3].c_str())));
+                CloseHandle(file);
+                return 0;
+            }
+            return -1;
+        }
     }
 
     std::vector<Case>& Cases()
@@ -38,6 +70,9 @@ namespace test
 
 int main(int argc, char** argv)
 {
+    if (int code = test::RunHelperMode(); code >= 0)
+        return code;
+
     SetConsoleOutputCP(CP_UTF8);
     mu::LogSetFile(std::filesystem::temp_directory_path() / L"modupdater-tests" / L"UnitTests.log");
 
